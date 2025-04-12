@@ -1,40 +1,39 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, TextInput, Image, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
 import { useForm, Controller } from 'react-hook-form';
 import { useToast } from 'react-native-toast-notifications';
 import FontAwesome from 'react-native-vector-icons/FontAwesome';
 import { useRouter } from 'expo-router';
 import logo from '../assets/images/logo.jpeg';
+import { loginUser } from '../redux/slices/authSlice';
+import { useDispatch, useSelector } from 'react-redux';
 
 const Login = () => {
   const router = useRouter();
-  const toast = useToast(); // Hook for toast notifications
-  const { control, handleSubmit, formState: { errors }, setValue } = useForm({
-    defaultValues: {
-      phone: '',
-      password: '',
-    },
-  });
+  const toast = useToast();
+  const dispatch = useDispatch();
+  const { isAuthenticated, loading, user } = useSelector(state => state.auth);
+  const [passwordVisible, setPasswordVisible] = useState(false);
 
-  const onSubmit = (data) => {
-    const demoCredentials = {
-      phone: '0712345678',
-      password: 'password',
+  const { control, handleSubmit, formState: { errors } } = useForm();
+
+  const onSubmit = async (data) => {
+    const credentials = {
+      phoneNumber: data.phone,
+      passwordHash: data.password,
     };
-
-    // Check demo credentials
-    if (data.phone === demoCredentials.phone && data.password === demoCredentials.password) {
-      toast.show('Welcome back!', { type: 'success', duration: 3500 ,placement:"top", offsetTop:50 });
-      router.push('./Home');
-    } else {
-      toast.show('Wrong credentials, please try again.', { type: 'danger', duration: 3000 ,placement:"top"});
+    try {
+      await dispatch(loginUser(credentials ))
+    } catch (error) {
+      console.error('Login error:', error);
     }
   };
 
   useEffect(() => {
-    setValue('phone', '');
-    setValue('password', '');
-  }, [setValue]);
+    if (isAuthenticated) {
+      router.replace('/Home');
+    }
+  }, [isAuthenticated]);
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
@@ -54,8 +53,8 @@ const Login = () => {
             rules={{
               required: 'Phone number is required',
               pattern: {
-                value: /^[0-9]{10,15}$/,
-                message: 'Phone number must be 10 to 15 digits',
+                value: /^[0-9]{8,12}$/,
+                message: 'Phone number must be 9 to 13 digits',
               },
             }}
             render={({ field: { onChange, onBlur, value } }) => (
@@ -74,21 +73,29 @@ const Login = () => {
 
         <View style={styles.inputGroup}>
           <Text>Password:</Text>
-          <Controller
-            control={control}
-            name="password"
-            rules={{ required: 'Password is required' }}
-            render={({ field: { onChange, onBlur, value } }) => (
-              <TextInput
-                style={styles.input}
-                placeholder="Password"
-                secureTextEntry
-                onBlur={onBlur}
-                onChangeText={onChange}
-                value={value}
-              />
-            )}
-          />
+          <View style={styles.passwordContainer}>
+            <Controller
+              control={control}
+              name="password"
+              rules={{ required: 'Password is required' }}
+              render={({ field: { onChange, onBlur, value } }) => (
+                <TextInput
+                  style={styles.input}
+                  placeholder="Password"
+                  secureTextEntry={!passwordVisible}
+                  onBlur={onBlur}
+                  onChangeText={onChange}
+                  value={value}
+                />
+              )}
+            />
+            <TouchableOpacity
+              onPress={() => setPasswordVisible(!passwordVisible)}
+              style={styles.eyeIcon}
+            >
+              <FontAwesome name={passwordVisible ? "eye" : "eye-slash"} size={20} color="#777" />
+            </TouchableOpacity>
+          </View>
           {errors.password && <Text style={styles.errorText}>{errors.password.message}</Text>}
         </View>
 
@@ -154,13 +161,24 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   input: {
+    flex: 1,
     height: 40,
     borderColor: '#ccc',
     borderWidth: 1,
     borderRadius: 8,
     paddingHorizontal: 10,
     backgroundColor: 'white',
-
+  },
+  passwordContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderColor: '#ccc',
+    borderWidth: 1,
+    borderRadius: 8,
+    backgroundColor: 'white',
+  },
+  eyeIcon: {
+    padding: 10,
   },
   errorText: {
     color: 'red',

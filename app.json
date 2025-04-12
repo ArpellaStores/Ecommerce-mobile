@@ -8,15 +8,29 @@
     "scheme": "myapp",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
-    "ios": {
-      "supportsTablet": true
-    },
+  
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/adaptive-icon.png",
+        "foregroundImage": "./assets/images/logo.jpeg",
         "backgroundColor": "#ffffff"
       },
-      "package": "com.mgachanja.Arpella"
+      "package": "com.mgachanja.Arpella",
+      "config": {
+        "googleMaps": {
+          "apiKey": "AIzaSyD-YPpUWHXNzvQjjXjqj7mvO2Idi72jREc"
+        }
+      }
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.mgachanja.Arpella",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "We need your location to show your current position on the map",
+       "NSLocationAlwaysUsageDescription": "We need your location to show your current position on the map"
+      },
+      "config": {
+        "googleMapsApiKey": "AIzaSyD-YPpUWHXNzvQjjXjqj7mvO2Idi72jREc"
+      }
     },
     "web": {
       "bundler": "metro",

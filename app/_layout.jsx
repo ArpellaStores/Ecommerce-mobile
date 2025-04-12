@@ -1,7 +1,7 @@
 import React, { Component } from 'react';
-import { Text, StatusBar, SafeAreaView, StyleSheet, View } from 'react-native';
+import { Text, StatusBar, SafeAreaView, StyleSheet, View, ActivityIndicator } from 'react-native';
 import { Stack } from "expo-router";
-import { Provider } from 'react-redux';
+import { Provider, useSelector } from 'react-redux';
 import store from '../redux/store';
 import { ToastProvider } from 'react-native-toast-notifications';
 
@@ -24,43 +24,47 @@ class ErrorBoundary extends Component {
   }
 }
 
+const GlobalLoader = () => {
+  const isLoading = useSelector((state) => state.auth.isLoading);
+  if (!isLoading) return null; 
+  return(
+    <View style={styles.loaderContainer}>
+      <ActivityIndicator size="large" color="#4B2C20" />
+    </View>
+  );
+};
+
 export default function RootLayout() {
   return (
-    <>
-      <StatusBar translucent backgroundColor="transparent" barStyle="dark-content" />
+    <Provider store={store}> 
       <ToastProvider>
         <ErrorBoundary>
-          <Provider store={store}>
-            {/* Use SafeAreaView inside a View to ensure full coverage */}
-            <View style={styles.fullScreen}>
-              <SafeAreaView style={styles.container}>
-                <Stack
-                  screenOptions={{
-                    header: () => null, // Remove headers
-                  }}
-                >
-                  <Stack.Screen name="Register" />
-                  <Stack.Screen name="Login" />
-                  <Stack.Screen name="Home" />
-                  <Stack.Screen name="Profile" />
-                  <Stack.Screen name="Cart" />
-                </Stack>
-              </SafeAreaView>
-            </View>
-          </Provider>
+          <StatusBar translucent backgroundColor="transparent" barStyle="dark-content" />
+          <View style={styles.fullScreen}>
+            <SafeAreaView style={styles.container}>
+              {/* ✅ Global Spinner */}
+              <Stack screenOptions={{ headerShown: false }} />
+            </SafeAreaView>
+          </View>
         </ErrorBoundary>
       </ToastProvider>
-    </>
+    </Provider>
   );
 }
 
 const styles = StyleSheet.create({
   fullScreen: {
     flex: 1,
-    backgroundColor: '#FFF8E1', // Set your desired background color
+    backgroundColor: '#FFF8E1',
   },
   container: {
     flex: 1,
     paddingTop: StatusBar.currentHeight || 24,
+  },
+  loaderContainer: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 });

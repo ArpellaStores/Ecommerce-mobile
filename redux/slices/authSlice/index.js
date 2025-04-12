@@ -1,31 +1,34 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import { toast } from 'react-native-toast-notifications';
-import { loginUserApi } from  '../../../services/Auth';
+import { loginUserApi, registerUserApi } from '../../../services/Auth';
 
-// Helper functions for showing toast notifications
-const showToastError = (message) => {
-  toast.error(message);
-};
 
-const showToastSuccess = (message) => {
-  toast.success(message);
-};
-
-// Async thunk for logging in
 export const loginUser = createAsyncThunk(
   'auth/loginUser',
   async (credentials, { rejectWithValue }) => {
     try {
       const response = await loginUserApi(credentials);
-      return response.data;
+      console.log("login response",response)
+      return response
     } catch (error) {
-      const errorMessage = error.response?.data || 'An unexpected error occurred';
-      return rejectWithValue(errorMessage);
+      return rejectWithValue(error.message);
     }
   }
 );
 
-// Auth slice
+export const registerUser = createAsyncThunk(
+  'auth/registerUser',
+  async (userData, { rejectWithValue }) => {
+    try {
+      const response = await registerUserApi(userData);
+      console.log(response)
+      return response
+    } catch (error) {
+      return rejectWithValue(error.message);
+    }
+  }
+);
+
 const authSlice = createSlice({
   name: 'auth',
   initialState: {
@@ -39,19 +42,6 @@ const authSlice = createSlice({
       state.isAuthenticated = false;
       state.user = null;
       state.error = null;
-      showToastSuccess('Logged out successfully');
-    },
-    register: (state, action) => {
-      const { FirstName, phone } = action.payload;
-      state.isAuthenticated = true;
-      state.user = {
-        FirstName: FirstName,
-        phone: phone,
-      };
-      state.error = null;
-
-      showToastSuccess('Registration successful');
-      showToastSuccess(`Welcome ${FirstName || ''}! Your username is ${phone || ''}`);
     },
   },
   extraReducers: (builder) => {
@@ -62,18 +52,40 @@ const authSlice = createSlice({
       })
       .addCase(loginUser.fulfilled, (state, action) => {
         state.isAuthenticated = true;
-        state.user = action.payload.user;
+        state.user = {
+          firstName: action.payload.firstName,
+          lastName: action.payload.lastName,
+          phone: action.payload.phoneNumber,
+          email: action.payload.email,
+          role: action.payload.role, 
+        };   
         state.isLoading = false;
-        const userName = state.user.firstName || state.user.phone;
-        toast.success(`Welcome, ${userName}!`);
       })
       .addCase(loginUser.rejected, (state, action) => {
         state.isLoading = false;
         state.error = action.payload;
-        toast.error(action.payload);
+      })
+      .addCase(registerUser.pending, (state) => {
+        state.isLoading = true;
+        state.error = null;
+      })
+      .addCase(registerUser.fulfilled, (state, action) => {
+        state.isAuthenticated = true;
+        state.user = {
+          firstName: action.payload.firstName,
+          lastName: action.payload.lastName,
+          phone: action.payload.phoneNumber,
+          email: action.payload.email,
+          role: action.payload.role, 
+        };  
+        state.isLoading = false;
+      })
+      .addCase(registerUser.rejected, (state, action) => {
+        state.isLoading = false;
+        state.error = action.payload;
       });
   },
 });
 
-export const { logout, register } = authSlice.actions;
+export const { logout } = authSlice.actions;
 export default authSlice.reducer;
