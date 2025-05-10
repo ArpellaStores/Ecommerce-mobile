@@ -1,5 +1,5 @@
 import axios from "axios";
-const baseUrl = process.env.REACT_APP_BASE_API_URL;
+import {baseUrl} from "../constants/const"
 
 export const editUserData = async ( phoneNumber , field, newValue) => {
     console.log(field,newValue)

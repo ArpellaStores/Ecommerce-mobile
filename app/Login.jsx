@@ -1,9 +1,19 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, TextInput, Image, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
+import {
+  View,
+  Text,
+  TextInput,
+  Image,
+  StyleSheet,
+  TouchableOpacity,
+  ScrollView,
+  Platform,
+} from 'react-native';
 import { useForm, Controller } from 'react-hook-form';
 import { useToast } from 'react-native-toast-notifications';
 import FontAwesome from 'react-native-vector-icons/FontAwesome';
 import { useRouter } from 'expo-router';
+import * as SecureStore from 'expo-secure-store';
 import logo from '../assets/images/logo.jpeg';
 import { loginUser } from '../redux/slices/authSlice';
 import { useDispatch, useSelector } from 'react-redux';
@@ -12,28 +22,179 @@ const Login = () => {
   const router = useRouter();
   const toast = useToast();
   const dispatch = useDispatch();
-  const { isAuthenticated, loading, user } = useSelector(state => state.auth);
-  const [passwordVisible, setPasswordVisible] = useState(false);
+  const { isAuthenticated, isLoading } = useSelector((state) => state.auth);
 
-  const { control, handleSubmit, formState: { errors } } = useForm();
+  const [passwordVisible, setPasswordVisible] = useState(false);
+  const [rememberMe, setRememberMe] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [autoLoginAttempted, setAutoLoginAttempted] = useState(false);
+  const [manualLoginPressed, setManualLoginPressed] = useState(false);
+
+  const { control, handleSubmit, setValue } = useForm();
+
+  const saveCredentials = async (token, phone, password) => {
+    try {
+      await SecureStore.setItemAsync('userToken', JSON.stringify(token));
+      await SecureStore.setItemAsync('savedPhone', phone);
+      await SecureStore.setItemAsync('savedPassword', password);
+      console.log("🔐 Credentials saved to SecureStore.");
+    } catch (error) {
+      console.error("❌ Error saving credentials:", error);
+    }
+  };
+
+  const clearCredentials = async () => {
+    try {
+      await SecureStore.deleteItemAsync('userToken');
+      await SecureStore.deleteItemAsync('savedPhone');
+      await SecureStore.deleteItemAsync('savedPassword');
+      console.log("🧹 Credentials cleared from SecureStore.");
+    } catch (error) {
+      console.error("❌ Error clearing credentials:", error);
+    }
+  };
 
   const onSubmit = async (data) => {
+    if (isProcessing) return;
+    
+    setManualLoginPressed(true);
+    setIsProcessing(true);
+
     const credentials = {
       phoneNumber: data.phone,
       passwordHash: data.password,
     };
+
     try {
-      await dispatch(loginUser(credentials ))
+      const result = await dispatch(loginUser(credentials));
+      console.log("🧾 Login result:", result);
+
+      if (result && result.payload) {
+        if (rememberMe) {
+          await saveCredentials(result.payload, data.phone, data.password);
+        } else {
+          await clearCredentials();
+        }
+      } else {
+        toast.show("Login failed. Please check your credentials.", { type: "danger" });
+      }
     } catch (error) {
       console.error('Login error:', error);
+      toast.show("An error occurred during login.", { type: "danger" });
+    } finally {
+      setIsProcessing(false);
     }
   };
 
+  // Auth redirect - with platform-specific handling
   useEffect(() => {
     if (isAuthenticated) {
-      router.replace('/Home');
+      console.log("✅ Authenticated. Navigating to /Home...");
+      
+      // Small delay for iOS to ensure state is properly updated
+      const navDelay = Platform.OS === 'ios' ? 300 : 0;
+      
+      setTimeout(() => {
+        router.replace('/Home');
+      }, navDelay);
     }
-  }, [isAuthenticated]);
+  }, [isAuthenticated, router]);
+
+  // Load stored credentials to form
+  useEffect(() => {
+    const loadStoredCredentials = async () => {
+      try {
+        const savedPhone = await SecureStore.getItemAsync('savedPhone');
+        const savedPassword = await SecureStore.getItemAsync('savedPassword');
+        
+        if (savedPhone) {
+          setValue('phone', savedPhone);
+          setRememberMe(true);
+        }
+        
+        if (savedPassword) {
+          setValue('password', savedPassword);
+        }
+      } catch (error) {
+        console.error("Error loading stored credentials:", error);
+      }
+    };
+    
+    loadStoredCredentials();
+  }, [setValue]);
+
+  // Auto login - with improved iOS handling
+  useEffect(() => {
+    const performAutoLogin = async () => {
+      if (autoLoginAttempted || isAuthenticated || manualLoginPressed) {
+        return;
+      }
+      
+      setAutoLoginAttempted(true);
+      console.log(`🔍 Running auto-login on ${Platform.OS}...`);
+
+      try {
+        const savedPhone = await SecureStore.getItemAsync('savedPhone');
+        const savedPassword = await SecureStore.getItemAsync('savedPassword');
+
+        console.log("📱 savedPhone:", savedPhone ? "Found" : "Not found");
+        console.log("🔑 savedPassword:", savedPassword ? "Found" : "Not found");
+
+        if (savedPhone && savedPassword) {
+          console.log("🚀 Starting auto-login process...");
+          setIsProcessing(true);
+
+          // For iOS, we need a longer initialization delay
+          if (Platform.OS === 'ios') {
+            await new Promise(resolve => setTimeout(resolve, 1000));
+          }
+
+          const credentials = {
+            phoneNumber: savedPhone,
+            passwordHash: savedPassword,
+          };
+
+          console.log(credentials);
+          const result = await dispatch(loginUser(credentials));
+          
+          if (result.error) {
+            console.warn("❌ Auto-login failed:", result.error);
+            
+            // On iOS, try one more time after a longer delay
+            if (Platform.OS === 'ios') {
+              setTimeout(async () => {
+                console.log("🔄 iOS: Final auto-login retry...");
+                try {
+                  await dispatch(loginUser(credentials));
+                } catch (err) {
+                  console.error("Final retry error:", err);
+                } finally {
+                  setIsProcessing(false);
+                }
+              }, 2000);
+            } else {
+              setIsProcessing(false);
+            }
+          } else {
+            console.log("✅ Auto-login succeeded");
+            setIsProcessing(false);
+          }
+        } else {
+          console.log("ℹ️ No stored credentials for auto-login");
+        }
+      } catch (err) {
+        console.error("⚠️ Error during auto-login:", err);
+        setIsProcessing(false);
+      }
+    };
+
+    // Delay auto-login slightly to ensure app is fully initialized
+    const timer = setTimeout(() => {
+      performAutoLogin();
+    }, Platform.OS === 'ios' ? 1000 : 300);
+
+    return () => clearTimeout(timer);
+  }, [dispatch, isAuthenticated, autoLoginAttempted, manualLoginPressed]);
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
@@ -68,7 +229,6 @@ const Login = () => {
               />
             )}
           />
-          {errors.phone && <Text style={styles.errorText}>{errors.phone.message}</Text>}
         </View>
 
         <View style={styles.inputGroup}>
@@ -89,21 +249,28 @@ const Login = () => {
                 />
               )}
             />
-            <TouchableOpacity
-              onPress={() => setPasswordVisible(!passwordVisible)}
-              style={styles.eyeIcon}
-            >
+            <TouchableOpacity onPress={() => setPasswordVisible(!passwordVisible)} style={styles.eyeIcon}>
               <FontAwesome name={passwordVisible ? "eye" : "eye-slash"} size={20} color="#777" />
             </TouchableOpacity>
           </View>
-          {errors.password && <Text style={styles.errorText}>{errors.password.message}</Text>}
         </View>
+
+        <TouchableOpacity
+          style={styles.rememberMeContainer}
+          onPress={() => setRememberMe(!rememberMe)}
+        >
+          <FontAwesome name={rememberMe ? "check-square" : "square-o"} size={24} color="#4B2C20" />
+          <Text style={styles.rememberMeText}> Remember Me</Text>
+        </TouchableOpacity>
 
         <TouchableOpacity
           style={styles.button}
           onPress={handleSubmit(onSubmit)}
+          disabled={isProcessing || isLoading}
         >
-          <Text style={styles.buttonText}>Login</Text>
+          <Text style={styles.buttonText}>
+            {isLoading || isProcessing ? "Processing..." : "Login"}
+          </Text>
         </TouchableOpacity>
 
         <Text style={styles.orText}>or</Text>
@@ -111,18 +278,27 @@ const Login = () => {
         <View style={styles.socialButtons}>
           <TouchableOpacity onPress={() => router.back('./index')} style={styles.socialButton}>
             <FontAwesome name="user" size={20} color="#000" />
-            <Text>Don't have an account? Register</Text>
+            <Text> Don't have an account? Register</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.socialButton}>
             <FontAwesome name="google" size={20} color="#db4437" />
-            <Text>Login with Google</Text>
+            <Text> Login with Google</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.socialButton}>
             <FontAwesome name="facebook" size={20} color="#3b5998" />
-            <Text>Login with Facebook</Text>
+            <Text> Login with Facebook</Text>
           </TouchableOpacity>
         </View>
       </View>
+
+      {(isProcessing || isLoading) && (
+        <View style={styles.backdrop}>
+          <View style={styles.spinnerContainer}>
+            <FontAwesome name="spinner" size={48} color="#4B2C20" style={styles.spinner} />
+            <Text style={styles.loadingText}>Loading...</Text>
+          </View>
+        </View>
+      )}
     </ScrollView>
   );
 };
@@ -131,7 +307,8 @@ const styles = StyleSheet.create({
   container: {
     flexGrow: 1,
     padding: 16,
-    backgroundColor: '#FFF8E1'
+    backgroundColor: '#FFF8E1',
+    position: 'relative',
   },
   header: {
     fontSize: 24,
@@ -180,9 +357,15 @@ const styles = StyleSheet.create({
   eyeIcon: {
     padding: 10,
   },
-  errorText: {
-    color: 'red',
-    fontSize: 12,
+  rememberMeContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  rememberMeText: {
+    fontSize: 16,
+    marginLeft: 8,
+    color: '#4B2C20',
   },
   orText: {
     textAlign: 'center',
@@ -210,6 +393,28 @@ const styles = StyleSheet.create({
   buttonText: {
     color: 'white',
     fontSize: 16,
+  },
+  backdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 999,
+  },
+  spinnerContainer: {
+    backgroundColor: 'white',
+    padding: 20,
+    borderRadius: 8,
+    flexDirection: 'column',
+    alignItems: 'center',
+  },
+  spinner: {
+    ...(Platform.OS === 'ios' ? { transform: [{ scale: 1.2 }] } : {}),
+  },
+  loadingText: {
+    marginTop: 10,
+    fontSize: 16,
+    color: '#4B2C20',
   },
 });
 

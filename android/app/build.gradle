@@ -86,7 +86,7 @@ android {
     buildToolsVersion rootProject.ext.buildToolsVersion
     compileSdk rootProject.ext.compileSdkVersion
 
-    namespace "com.arpella"
+    namespace 'com.mgachanja.Arpella'
     defaultConfig {
         applicationId 'com.mgachanja.Arpella'
         minSdkVersion rootProject.ext.minSdkVersion

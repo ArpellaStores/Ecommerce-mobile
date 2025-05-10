@@ -13,6 +13,15 @@
       "distribution": "internal"
     },
     "production": {
+      "env" :{
+        "GOOGLE_MAPS_API_KEY": "AIzaSyD-YPpUWHXNzvQjjXjqj7mvO2Idi72jREc"
+      },
+      "android": {
+        "buildType": "app-bundle"
+      },
+      "ios": {
+        "buildType": "release"
+      },
       "autoIncrement": true
     }
   },
