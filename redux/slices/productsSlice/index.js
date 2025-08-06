@@ -1,99 +1,100 @@
+// redux/slices/productsSlice.js
+
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import axios from 'axios';
-import {baseUrl} from "../../../constants/const"
+import { baseUrl } from '../../../constants/const';
 
+/**
+ * Async thunk: fetchProducts
+ * - Retrieves products and categories from backend
+ * - De-duplicates products by name, merging barcodes
+ * - Returns { products: Array, categories: Array }
+ * - On failure, rejects with error message
+ */
 export const fetchProducts = createAsyncThunk(
   'products/fetchProducts',
   async (_, thunkAPI) => {
     try {
-      const response = await axios.get(`${baseUrl}/products`);
-      if (!Array.isArray(response.data)) {
-        console.error("API response is not an array:", response.data);
-        return thunkAPI.rejectWithValue("Invalid data format received");
+      const { data: productsData } = await axios.get(`${baseUrl}/products`);
+      if (!Array.isArray(productsData)) {
+        return thunkAPI.rejectWithValue('Invalid products data format');
       }
 
-      // Filter duplicate products by name and merge barcodes if present
-      const productMap = new Map();
-      response.data.forEach(item => {
-        if (productMap.has(item.name)) {
-          const existing = productMap.get(item.name);
-          // Merge barcode if it exists and isn't already in the list
+      // De-duplicate by product name, merge barcodes
+      const map = new Map();
+      productsData.forEach((item) => {
+        const name = item.name || '';
+        if (map.has(name)) {
+          const existing = map.get(name);
           if (item.barcode && !existing.barcodes.includes(item.barcode)) {
             existing.barcodes.push(item.barcode);
           }
         } else {
-          // Ensure all products have consistent property naming
-          productMap.set(item.name, {
+          map.set(name, {
             ...item,
             id: item.id || Math.random().toString(),
-            name: item.name || '',
-            price: item.price || 0,
-            barcodes: item.barcode ? [item.barcode] : []
+            price: item.price ?? 0,
+            barcodes: item.barcode ? [item.barcode] : [],
           });
         }
       });
+      const uniqueProducts = Array.from(map.values());
 
-      const uniqueProducts = Array.from(productMap.values());
-
-      // Also fetch categories to ensure we have them
+      // Fetch categories (best-effort)
+      let categories = [];
       try {
-        const categoriesResponse = await axios.get(`${baseUrl}/categories`);
-        
-        // Return the processed data
-        return {
-          products: uniqueProducts,
-          categories: Array.isArray(categoriesResponse.data) ? categoriesResponse.data : []
-        };
-      } catch (categoryError) {
-        return {
-          products: uniqueProducts,
-          categories: []
-        };
+        const { data: categoriesData } = await axios.get(`${baseUrl}/categories`);
+        categories = Array.isArray(categoriesData) ? categoriesData : [];
+      } catch {
+        // ignore category errors
       }
-    } catch (error) {
-      return thunkAPI.rejectWithValue(error.response?.data || "Unknown error");
+
+      return { products: uniqueProducts, categories };
+    } catch (err) {
+      return thunkAPI.rejectWithValue(err.response?.data || err.message || 'Unknown error');
     }
   }
 );
 
 const initialState = {
   products: [],
-  inventories: [],
   categories: [],
-  subcategories: [],
   loading: false,
-  error: null
+  error: null,
 };
 
+/**
+ * Products Slice
+ * - Handles fetchProducts lifecycle
+ * - Exposes resetProductsState reducer for manual reset
+ */
 const productsSlice = createSlice({
   name: 'products',
   initialState,
   reducers: {
-    // Add a manual reset action for debugging
-    resetProductsState: () => initialState
+    /**
+     * resetProductsState
+     * - Resets slice to initial state
+     */
+    resetProductsState: () => initialState,
   },
   extraReducers: (builder) => {
     builder
-      // fetchProducts
       .addCase(fetchProducts.pending, (state) => {
         state.loading = true;
         state.error = null;
       })
-      .addCase(fetchProducts.fulfilled, (state, action) => {
-        
+      .addCase(fetchProducts.fulfilled, (state, { payload }) => {
         state.loading = false;
-        // Explicitly update each property to ensure they're set correctly
-        state.products = action.payload.products || [];
-        state.categories = action.payload.categories || [];
+        state.products = payload.products;
+        state.categories = payload.categories;
         state.error = null;
-        
-       
       })
-      .addCase(fetchProducts.rejected, (state, action) => {
+      .addCase(fetchProducts.rejected, (state, { payload }) => {
         state.loading = false;
-        state.error = action.payload || "Failed to fetch products";
+        state.error = payload || 'Failed to fetch products';
       });
-  }
+  },
 });
 
 export const { resetProductsState } = productsSlice.actions;

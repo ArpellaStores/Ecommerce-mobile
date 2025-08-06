@@ -1,2 +1,2 @@
 
-export const baseUrl = "http://arpella1.hostpinnacleservers.com:8080"
+export const baseUrl = "https:api.arpellastore.com"

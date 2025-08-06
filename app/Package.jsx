@@ -1,3 +1,19 @@
+/**
+ * Package Component - Order Management and Tracking
+ * 
+ * This component handles displaying user orders, their status, and provides 
+ * functionality for viewing order details and tracking.
+ * 
+ * Features:
+ * - Fetches and displays user orders filtered by user's phone number
+ * - Order status visualization with interactive progress tracker
+ * - Order details modal with item breakdown
+ * - Bottom navigation for app-wide movement
+ * 
+ * @author YourName
+ * @version 1.0.1
+ */
+
 import React, { useState, useEffect } from 'react';
 import { 
   Text, 
@@ -6,19 +22,44 @@ import {
   TouchableOpacity, 
   Modal, 
   FlatList, 
-  ActivityIndicator,
-  ScrollView,
-  Dimensions
+  ActivityIndicator
 } from 'react-native';
 import Icon from 'react-native-vector-icons/FontAwesome';
 import { useRouter } from 'expo-router';
-import { BASEURL } from '../constants/const';
+import { baseUrl } from '../constants/const';
 import { toast } from 'react-native-toast-notifications';
 
-// Status Progress Tracker Component
+// Constants for app-wide use
+const THEME_COLORS = {
+  primary: '#D67D00', // Darker orange
+  secondary: '#FFF8E1',
+  border: '#E0E0E0',
+  text: {
+    primary: '#000000',
+    secondary: '#757575'
+  },
+  status: {
+    pending: '#D67D00',    // Darker orange
+    processing: '#2196F3', // Blue
+    delivering: '#8BC34A',  // Light green
+    delivered: '#4CAF50'    // Green
+  }
+};
+
+// Currently logged in user (should be fetched from a global state manager in real app)
+const CURRENT_USER = '0768212567'; // Typically would come from auth context/store
+
+/**
+ * Status Progress Tracker Component
+ * Visual indicator showing the current order status in the fulfillment process
+ * 
+ * @param {String} status - Current status of the order
+ */
 const StatusProgressTracker = ({ status }) => {
+  // Convert status to lowercase for consistent comparison
+  const statusLower = status ? status.toLowerCase() : 'pending';
   const statuses = ['pending', 'processing', 'delivering', 'delivered'];
-  const currentIndex = statuses.indexOf(status);
+  const currentIndex = statuses.indexOf(statusLower);
 
   return (
     <View style={trackerStyles.container}>
@@ -80,7 +121,14 @@ const StatusProgressTracker = ({ status }) => {
   );
 };
 
-// Order Detail Modal Component
+/**
+ * Order Detail Modal Component
+ * Displays comprehensive details for a selected order
+ * 
+ * @param {Boolean} visible - Controls modal visibility
+ * @param {Object} order - Order data object to display
+ * @param {Function} onClose - Handler function to close modal
+ */
 const OrderDetailModal = ({ visible, order, onClose }) => {
   if (!order) return null;
   
@@ -97,7 +145,7 @@ const OrderDetailModal = ({ visible, order, onClose }) => {
             <Icon name="times" size={20} color="#000" />
           </TouchableOpacity>
           
-          <Text style={styles.modalTitle}>Order #{order.orderId}</Text>
+          <Text style={styles.modalTitle}>Order #{order.orderid || order.orderId}</Text>
           
           {/* Status Tracker */}
           <StatusProgressTracker status={order.status} />
@@ -107,25 +155,27 @@ const OrderDetailModal = ({ visible, order, onClose }) => {
             <View style={styles.orderInfoRow}>
               <Text style={styles.orderInfoLabel}>Status:</Text>
               <Text style={styles.orderInfoValue}>
-                {order.status.charAt(0).toUpperCase() + order.status.slice(1)}
+                {order.status && (order.status.charAt(0).toUpperCase() + order.status.slice(1))}
               </Text>
             </View>
             <View style={styles.orderInfoRow}>
               <Text style={styles.orderInfoLabel}>Total:</Text>
-              <Text style={styles.orderInfoValue}>Ksh {order.total.toLocaleString()}</Text>
+              <Text style={styles.orderInfoValue}>Ksh {order.total ? order.total.toLocaleString() : '0'}</Text>
             </View>
           </View>
           
           <View style={styles.orderDetailsSection}>
             <Text style={styles.sectionTitle}>Items</Text>
-            {order.orderItems.map((item, index) => (
+            {order.orderItems && order.orderItems.map((item, index) => (
               <View key={index} style={styles.itemRow}>
                 <View style={styles.itemInfo}>
-                  <Text style={styles.itemName}>{item.product.name}</Text>
-                  <Text style={styles.itemPrice}>Ksh {item.product.price} x {item.quantity}</Text>
+                  <Text style={styles.itemName}>{item.product?.name || 'Unknown Product'}</Text>
+                  <Text style={styles.itemPrice}>
+                    Ksh {item.product?.price || 0} x {item.quantity || 1}
+                  </Text>
                 </View>
                 <Text style={styles.itemTotal}>
-                  Ksh {(item.product.price * item.quantity).toLocaleString()}
+                  Ksh {((item.product?.price || 0) * (item.quantity || 1)).toLocaleString()}
                 </Text>
               </View>
             ))}
@@ -136,36 +186,46 @@ const OrderDetailModal = ({ visible, order, onClose }) => {
   );
 };
 
-// Order Item Component for the FlatList
+/**
+ * Order Item Component
+ * Renders individual order card in the list
+ * 
+ * @param {Object} order - Order data object
+ * @param {Function} onTrackOrder - Handler to open order details modal
+ */
 const OrderItem = ({ order, onTrackOrder }) => {
+  // Safely access orderid/orderId
+  const displayOrderId = order.orderid || order.orderId;
+  
+  // Convert status to lowercase for consistent comparison
+  const statusLower = order.status ? order.status.toLowerCase() : 'pending';
+  
+  // Determine status color
+  const statusColor = THEME_COLORS.status[statusLower] || THEME_COLORS.status.pending;
+  
   return (
     <View style={styles.orderCard}>
       <View style={styles.orderCardHeader}>
-        <Text style={styles.orderNumber}>Order #{order.orderId}</Text>
-        <View style={[
-          styles.statusBadge, 
-          {
-            backgroundColor: 
-              order.status === 'pending' ? '#FFA000' : 
-              order.status === 'processing' ? '#2196F3' : 
-              order.status === 'delivering' ? '#8BC34A' : '#4CAF50'
-          }
-        ]}>
+        <Text style={styles.orderNumber}>Order #{displayOrderId}</Text>
+        <View style={[styles.statusBadge, { backgroundColor: statusColor }]}>
           <Text style={styles.statusText}>
-            {order.status.charAt(0).toUpperCase() + order.status.slice(1)}
+            {order.status && (order.status.charAt(0).toUpperCase() + order.status.slice(1))}
           </Text>
         </View>
       </View>
       
       <View style={styles.orderCardBody}>
         <Text style={styles.orderItemsText}>
-          {order.orderItems.map(item => item.product.name).join(', ')}
+          {(order.orderItems && order.orderItems.length > 0) 
+            ? order.orderItems.map(item => item.product?.name || 'Product').join(', ')
+            : 'No items'
+          }
         </Text>
-        <Text style={styles.totalText}>Ksh {order.total.toLocaleString()}</Text>
+        <Text style={styles.totalText}>Ksh {order.total ? order.total.toLocaleString() : '0'}</Text>
       </View>
       
       <View style={styles.orderCardFooter}>
-        {order.status === 'pending' && (
+        {statusLower === 'pending' && (
           <TouchableOpacity 
             style={styles.trackButton} 
             onPress={() => onTrackOrder(order)}
@@ -175,7 +235,10 @@ const OrderItem = ({ order, onTrackOrder }) => {
           </TouchableOpacity>
         )}
         
-        <TouchableOpacity style={styles.viewDetailsButton}>
+        <TouchableOpacity 
+          style={styles.viewDetailsButton}
+          onPress={() => onTrackOrder(order)}
+        >
           <Text style={styles.viewDetailsText}>View Details</Text>
         </TouchableOpacity>
       </View>
@@ -183,17 +246,23 @@ const OrderItem = ({ order, onTrackOrder }) => {
   );
 };
 
-// Backdrop Loader Component
+/**
+ * Loading Indicator Component
+ * Displayed while fetching order data
+ */
 const BackdropLoader = () => (
   <View style={styles.backdropContainer}>
     <View style={styles.loaderBox}>
-      <ActivityIndicator size="large" color="#FFA000" />
+      <ActivityIndicator size="large" color={THEME_COLORS.primary} />
       <Text style={styles.loadingText}>Loading orders...</Text>
     </View>
   </View>
 );
 
-// Main Component
+/**
+ * Main Package Component
+ * Handles orders list, navigation, and state management
+ */
 const Package = () => {
   const router = useRouter();
   const [orders, setOrders] = useState([]);
@@ -201,25 +270,29 @@ const Package = () => {
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [modalVisible, setModalVisible] = useState(false);
 
-  // Fetch orders data
+  // Fetch orders data on component mount
   useEffect(() => {
     const fetchOrders = async () => {
       try {
         setLoading(true);
-        const response = await fetch(`${BASEURL}/orders`);
+        const response = await fetch(`${baseUrl}/orders`);
         
         if (!response.ok) {
           throw new Error('Failed to fetch orders');
         }
         
         const data = await response.json();
-        setOrders(data);
+        
+        // Filter orders for the current user only
+        const userOrders = data.filter(order => 
+          (order.userId === CURRENT_USER)
+        );
+        
+        setOrders(userOrders);
       } catch (error) {
         console.error('Error fetching orders:', error);
-        toast.show({
+        toast.show('Failed to load orders. Please try again later.', {
           type: 'error',
-          text1: 'Error',
-          text2: 'Failed to load orders. Please try again later.',
         });
       } finally {
         setLoading(false);
@@ -229,17 +302,25 @@ const Package = () => {
     fetchOrders();
   }, []);
 
+  /**
+   * Handler for opening the order details modal
+   * @param {Object} order - Selected order to display details for
+   */
   const handleTrackOrder = (order) => {
     setSelectedOrder(order);
     setModalVisible(true);
   };
 
+  /**
+   * Handler for closing the order details modal
+   */
   const closeModal = () => {
     setModalVisible(false);
   };
 
   return (
     <View style={styles.container}>
+      {/* Back Navigation */}
       <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
         <Icon name="arrow-left" size={24} color="#000" />
       </TouchableOpacity>
@@ -251,7 +332,7 @@ const Package = () => {
       ) : (
         <FlatList
           data={orders}
-          keyExtractor={(item) => item.orderId.toString()}
+          keyExtractor={(item) => (item.orderid || item.orderId || Math.random().toString())}
           renderItem={({ item }) => (
             <OrderItem order={item} onTrackOrder={handleTrackOrder} />
           )}
@@ -275,15 +356,15 @@ const Package = () => {
       {/* Bottom Navigation */}
       <View style={styles.bottomNavigation}>
         <TouchableOpacity style={styles.navItem} onPress={() => router.push('./')}>
-          <Icon name="home" size={24} color="black" />
+          <Icon name="home" size={24} color="#000" />
           <Text>Home</Text>
         </TouchableOpacity>
         <TouchableOpacity style={[styles.navItem, styles.activeNavItem]}>
-          <Icon name="ticket" size={24} color="black" />
+          <Icon name="ticket" size={24} color="#000" />
           <Text>My Orders</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.navItem} onPress={() => router.push('./Profile')}>
-          <Icon name="user" size={24} color="black" />
+          <Icon name="user" size={24} color="#000" />
           <Text>Profile</Text>
         </TouchableOpacity>
       </View>
@@ -314,10 +395,10 @@ const trackerStyles = StyleSheet.create({
     zIndex: 1,
   },
   activeLine: {
-    backgroundColor: '#FFA000',
+    backgroundColor: THEME_COLORS.primary,
   },
   inactiveLine: {
-    backgroundColor: '#E0E0E0',
+    backgroundColor: THEME_COLORS.border,
   },
   circle: {
     width: 30,
@@ -328,10 +409,10 @@ const trackerStyles = StyleSheet.create({
     zIndex: 2,
   },
   activeCircle: {
-    backgroundColor: '#FFA000',
+    backgroundColor: THEME_COLORS.primary,
   },
   inactiveCircle: {
-    backgroundColor: '#E0E0E0',
+    backgroundColor: THEME_COLORS.border,
   },
   labelsContainer: {
     flexDirection: 'row',
@@ -348,11 +429,11 @@ const trackerStyles = StyleSheet.create({
     textAlign: 'center',
   },
   activeLabel: {
-    color: '#000',
+    color: THEME_COLORS.text.primary,
     fontWeight: 'bold',
   },
   inactiveLabel: {
-    color: '#757575',
+    color: THEME_COLORS.text.secondary,
   },
 });
 
@@ -361,7 +442,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     padding: 16,
-    backgroundColor: '#FFF8E1',
+    backgroundColor: THEME_COLORS.secondary,
     paddingBottom: 60, // Space for bottom navigation
   },
   title: {
@@ -415,7 +496,7 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   orderItemsText: {
-    color: '#757575',
+    color: THEME_COLORS.text.secondary,
     marginBottom: 5,
   },
   totalText: {
@@ -426,11 +507,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'flex-end',
     borderTopWidth: 1,
-    borderTopColor: '#e0e0e0',
+    borderTopColor: THEME_COLORS.border,
     paddingTop: 10,
   },
   trackButton: {
-    backgroundColor: '#FFA000',
+    backgroundColor: THEME_COLORS.primary,
     paddingHorizontal: 15,
     paddingVertical: 8,
     borderRadius: 4,
@@ -450,7 +531,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   viewDetailsText: {
-    color: '#FFA000',
+    color: THEME_COLORS.primary,
     fontWeight: 'bold',
   },
   emptyContainer: {
@@ -461,7 +542,7 @@ const styles = StyleSheet.create({
   emptyText: {
     marginTop: 10,
     fontSize: 16,
-    color: '#757575',
+    color: THEME_COLORS.text.secondary,
   },
   modalOverlay: {
     flex: 1,
@@ -488,7 +569,7 @@ const styles = StyleSheet.create({
   orderDetailsSection: {
     marginTop: 15,
     borderTopWidth: 1,
-    borderTopColor: '#e0e0e0',
+    borderTopColor: THEME_COLORS.border,
     paddingTop: 15,
   },
   sectionTitle: {
@@ -502,7 +583,7 @@ const styles = StyleSheet.create({
   },
   orderInfoLabel: {
     width: 80,
-    color: '#757575',
+    color: THEME_COLORS.text.secondary,
   },
   orderInfoValue: {
     flex: 1,
@@ -522,7 +603,7 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   itemPrice: {
-    color: '#757575',
+    color: THEME_COLORS.text.secondary,
     fontSize: 12,
     marginTop: 2,
   },
@@ -562,7 +643,7 @@ const styles = StyleSheet.create({
     height: 60,
     borderTopWidth: 1,
     borderTopColor: '#ccc',
-    backgroundColor: '#FFF8E1',
+    backgroundColor: THEME_COLORS.secondary,
   },
   navItem: {
     alignItems: 'center',
@@ -571,7 +652,7 @@ const styles = StyleSheet.create({
   },
   activeNavItem: {
     borderBottomWidth: 2,
-    borderBottomColor: '#FFA000',
+    borderBottomColor: THEME_COLORS.primary,
   },
 });
 

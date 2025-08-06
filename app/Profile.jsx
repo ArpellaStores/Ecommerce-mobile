@@ -1,544 +1,367 @@
 // screens/ProfilePage.js
+
 import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
+  ScrollView,
   TouchableOpacity,
   StyleSheet,
-  ScrollView,
-  Modal,
-  TextInput,
+  Switch,
   ActivityIndicator,
-  Image
+  Modal,
+  FlatList,
+  Image,
 } from 'react-native';
-import Icon from 'react-native-vector-icons/FontAwesome';
 import FontAwesome from 'react-native-vector-icons/FontAwesome';
-import { useRouter } from 'expo-router';
+import { useRouter, usePathname } from 'expo-router';
 import { useSelector, useDispatch } from 'react-redux';
-import { logout } from '../redux/slices/authSlice';
 import axios from 'axios';
-import { showMessage } from 'react-native-flash-message';
-import { editUserData } from '../services/editUserData';
+import * as SecureStore from 'expo-secure-store';
+import { logout } from '../redux/slices/authSlice';
+import { clearCredentials, exitApp } from '../services/Auth';
 import { baseUrl } from '../constants/const';
 
 const ProfilePage = () => {
-  const { user, isAuthenticated, error } = useSelector(state => state.auth);
-  const products = useSelector(state => state.products.products);
-  const dispatch = useDispatch();
   const router = useRouter();
+  const pathname = usePathname(); // current route path
+  const dispatch = useDispatch();
+  const { user, isAuthenticated } = useSelector((s) => s.auth);
+  const products = useSelector((s) => s.products.products);
 
+  const [autoEnabled, setAutoEnabled] = useState(true);
   const [orders, setOrders] = useState([]);
+  const [loadingOrders, setLoadingOrders] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState(null);
-  const [showEditModal, setShowEditModal] = useState(false);
-  const [editingField, setEditingField] = useState('');
-  const [newValue, setNewValue] = useState('');
-  const [isApiLoading, setIsApiLoading] = useState(false);
 
+  // Load rememberMe flag
+  useEffect(() => {
+    (async () => {
+      const rem = await SecureStore.getItemAsync('rememberMe');
+      setAutoEnabled(rem === 'true');
+    })();
+  }, []);
+
+  // Fetch order history
   useEffect(() => {
     const fetchOrders = async () => {
-      setIsApiLoading(true);
+      setLoadingOrders(true);
       try {
-        const response = await axios.get(`${baseUrl}/orders`);
-        console.log('Fetched Orders:', response.data);
-
-        // filter for orders where order.userId matches user.phone OR user.id
-        const userOrders = response.data.filter(order => {
-          const oid = String(order.userId);
-          return (
-            (user?.phone && oid === String(user.phone)) ||
-            (user?.id && oid === String(user.id))
-          );
-        });
-
-        console.log('User Orders:', userOrders);
-        setOrders(userOrders);
-      } catch (err) {
-        showMessage({
-          message: 'Error',
-          description: 'Failed to fetch orders.',
-          type: 'danger',
-        });
-        console.error('Error fetching orders:', err);
+        const { data } = await axios.get(`${baseUrl}/orders`);
+        const filtered = data.filter(o =>
+          String(o.userId) === String(user.id || user.phone)
+        );
+        setOrders(filtered);
+      } catch (e) {
+        console.error('Fetch orders error', e);
       } finally {
-        setIsApiLoading(false);
+        setLoadingOrders(false);
       }
     };
+    if (isAuthenticated) fetchOrders();
+  }, [user, isAuthenticated]);
 
-    if (user?.phone || user?.id) {
-      fetchOrders();
-    }
-  }, [user]);
-
-  const handleEditClick = (field, currentValue) => {
-    setEditingField(field);
-    setNewValue(currentValue);
-    setShowEditModal(true);
-  };
-
-  const handleSubmit = async () => {
-    setIsApiLoading(true);
-    try {
-      await editUserData(user.phone, editingField, newValue);
-      setShowEditModal(false);
-      router.replace('/Profile');
-    } catch (err) {
-      showMessage({
-        message: 'Error',
-        description: err.toString(),
-        type: 'danger',
-      });
-    } finally {
-      setIsApiLoading(false);
+  // Toggle auto‑login
+  const onToggleAuto = async (value) => {
+    setAutoEnabled(value);
+    if (!value) {
+      await clearCredentials();
+    } else {
+      await SecureStore.setItemAsync('rememberMe', 'true');
     }
   };
 
-  const handleLogout = () => {
+  // Logout & exit
+  const onLogout = async () => {
+    await clearCredentials();
     dispatch(logout());
-    router.replace('/Login');
+    exitApp();
   };
 
-  const renderOrderIcon = status => {
-    const s = status?.toLowerCase();
-    if (s === 'pending') return <Icon name="hourglass" size={24} color="blue" />;
-    if (s === 'in transit') return <Icon name="truck" size={24} color="black" />;
-    if (s === 'fulfilled') return <Icon name="check-circle" size={24} color="green" />;
-    return null;
-  };
+  const renderOrderItem = ({ item }) => (
+    <TouchableOpacity
+      style={styles.orderCard}
+      onPress={() => setSelectedOrder(item)}
+    >
+      <View style={styles.orderCardHeader}>
+        <Text style={styles.orderId}>Order #{item.orderid.toUpperCase()}</Text>
+        <Text style={styles.orderDate}>{new Date(item.date).toLocaleDateString()}</Text>
+      </View>
+      <View style={styles.orderCardBody}>
+        <Text>
+          Status:{' '}
+          <Text style={styles.orderStatus}>{item.status || 'N/A'}</Text>
+        </Text>
+        <FontAwesome
+          name={
+            item.status === 'fulfilled'
+              ? 'check-circle'
+              : item.status === 'in transit'
+              ? 'truck'
+              : 'hourglass'
+          }
+          size={20}
+          color="#4B2C20"
+        />
+      </View>
+    </TouchableOpacity>
+  );
 
-  const handleOrderClick = order => {
-    setSelectedOrder(order);
-  };
-
-  const handleCloseOrderModal = () => {
-    setSelectedOrder(null);
+  // Helper to render nav item
+  const NavItem = ({ route, icon, label }) => {
+    const isActive = pathname === route;
+    return (
+      <TouchableOpacity
+        disabled={isActive}
+        onPress={() => !isActive && router.replace(route)}
+        style={styles.navItem}
+      >
+        <FontAwesome
+          name={icon}
+          size={24}
+          color={isActive ? 'blue' : '#000'}
+        />
+        <Text style={[styles.navLabel, isActive && { color: 'blue' }]}>
+          {label}
+        </Text>
+      </TouchableOpacity>
+    );
   };
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      <Text style={styles.title}>Personal Details</Text>
-      <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-        <Icon name="arrow-left" size={24} color="#000" />
-      </TouchableOpacity>
-
-      {isAuthenticated ? (
-        <>
-          {/** First Name **/}
-          <View style={styles.fieldRow}>
-            <Text style={styles.label}>First Name:</Text>
-            <View style={styles.fieldValue}>
-              <Text style={styles.fieldText}>{user?.firstName || 'N/A'}</Text>
-              <TouchableOpacity onPress={() => handleEditClick('firstName', user?.firstName)}>
-                <Icon name="pencil" size={18} color="#000" />
-              </TouchableOpacity>
+    <>
+      <ScrollView contentContainerStyle={styles.container}>
+        {/* Personal Details */}
+        <Text style={styles.header}>Personal Details</Text>
+        {isAuthenticated ? (
+          <>
+            {['firstName','lastName','email','phone'].map(field => (
+              <View key={field} style={styles.row}>
+                <Text style={styles.label}>
+                  {field === 'phone' ? 'Phone:' :
+                   field === 'email' ? 'Email:' :
+                   `${field.replace(/Name/, ' Name')}:`}
+                </Text>
+                <View style={styles.valueRow}>
+                  <Text style={styles.valueText}>{user[field] || 'N/A'}</Text>
+                </View>
+              </View>
+            ))}
+            <View style={styles.row}>
+              <Text style={styles.label}>Enable Auto‑login:</Text>
+              <Switch value={autoEnabled} onValueChange={onToggleAuto} />
             </View>
-          </View>
+          </>
+        ) : (
+          <Text style={styles.centerText}>No user data. Please log in.</Text>
+        )}
 
-          {/** Last Name **/}
-          <View style={styles.fieldRow}>
-            <Text style={styles.label}>Last Name:</Text>
-            <View style={styles.fieldValue}>
-              <Text style={styles.fieldText}>{user?.lastName || 'N/A'}</Text>
-              <TouchableOpacity onPress={() => handleEditClick('lastName', user?.lastName)}>
-                <Icon name="pencil" size={18} color="#000" />
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          {/** Email **/}
-          <View style={styles.fieldRow}>
-            <Text style={styles.label}>Email:</Text>
-            <View style={styles.fieldValue}>
-              <Text style={styles.fieldText}>{user?.email || 'N/A'}</Text>
-              <TouchableOpacity onPress={() => handleEditClick('email', user?.email)}>
-                <Icon name="pencil" size={18} color="#000" />
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          {/** Phone **/}
-          <View style={styles.fieldRow}>
-            <Text style={styles.label}>Phone:</Text>
-            <View style={styles.fieldValue}>
-              <Text style={styles.fieldText}>{user?.phone || 'N/A'}</Text>
-              <TouchableOpacity onPress={() => handleEditClick('PhoneNumber', user?.phone)}>
-                <Icon name="pencil" size={18} color="#000" />
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          {/** Password **/}
-          <View style={styles.fieldRow}>
-            <Text style={styles.label}>Password:</Text>
-            <View style={styles.fieldValue}>
-              <Text style={styles.fieldText}>**********</Text>
-              <TouchableOpacity onPress={() => handleEditClick('password', '')}>
-                <Icon name="pencil" size={18} color="#000" />
-              </TouchableOpacity>
-            </View>
-          </View>
-        </>
-      ) : (
-        <Text style={styles.centeredText}>No user data available. Please log in.</Text>
-      )}
-
-      {error ? <Text style={styles.errorText}>{error}</Text> : null}
-
-      <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
-        <Text style={styles.logoutText}>Logout</Text>
-      </TouchableOpacity>
-
-      <Text style={styles.title}>Order History</Text>
-
-      {orders.length === 0 ? (
-        <Text style={styles.centeredText}>No orders found.</Text>
-      ) : (
-        orders.map(order => (
-          <TouchableOpacity
-            key={order.orderid}
-            style={styles.orderRow}
-            onPress={() => handleOrderClick(order)}
-          >
-            <View style={styles.orderInfo}>
-              <Text style={styles.orderText}>
-                ORDER {order.orderid.toUpperCase()}
-              </Text>
-              <Text>{order.status}</Text>
-            </View>
-            <View style={styles.orderActions}>
-              <Text style={styles.viewLink}>View Details</Text>
-              <View style={styles.statusIcon}>{renderOrderIcon(order.status)}</View>
-            </View>
-          </TouchableOpacity>
-        ))
-      )}
-
-      {/** Bottom Nav **/}
-      <View style={styles.bottomNavigation}>
-        <TouchableOpacity style={styles.navItem} onPress={() => router.replace('/Home')}>
-          <FontAwesome name="home" size={24} color="black" />
-          <Text>Home</Text>
+        <TouchableOpacity style={styles.logoutBtn} onPress={onLogout}>
+          <Text style={styles.logoutText}>Logout & Exit</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.navItem} onPress={() => router.replace('/Package')}>
-          <FontAwesome name="ticket" size={24} color="black" />
-          <Text>My Orders</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.navItem}>
-          <FontAwesome name="user" size={24} color="blue" />
-          <Text>Profile</Text>
-        </TouchableOpacity>
-      </View>
 
-      {/** Edit Modal **/}
-      <Modal
-        visible={showEditModal}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setShowEditModal(false)}
-      >
-        <View style={styles.modalContainer}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Editing {editingField}</Text>
-            {editingField === 'password' ? (
-              <>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Enter new password"
-                  secureTextEntry
-                  onChangeText={setNewValue}
-                />
-              </>
-            ) : (
-              <>
-                <TextInput
-                  style={styles.input}
-                  value={newValue}
-                  onChangeText={setNewValue}
-                />
-              </>
-            )}
-            <View style={styles.modalButtonRow}>
-              <TouchableOpacity style={[styles.modalButton, styles.cancelButton]} onPress={() => setShowEditModal(false)}>
-                <Text style={styles.modalButtonText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={[styles.modalButton, styles.submitButton]} onPress={handleSubmit}>
-                <Text style={styles.modalButtonText}>Submit</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
+        {/* Order History */}
+        <Text style={styles.sectionHeader}>Order History</Text>
+        {loadingOrders ? (
+          <ActivityIndicator size="large" color="#4B2C20" />
+        ) : orders.length === 0 ? (
+          <Text style={styles.centerText}>You have no past orders.</Text>
+        ) : (
+          <FlatList
+            data={orders}
+            renderItem={renderOrderItem}
+            keyExtractor={item => item.orderid.toString()}
+            contentContainerStyle={styles.orderList}
+          />
+        )}
+      </ScrollView>
 
-      {/** Order Details Modal **/}
+      {/* Order Details Modal */}
       <Modal
         visible={!!selectedOrder}
         transparent
         animationType="slide"
-        onRequestClose={handleCloseOrderModal}
+        onRequestClose={() => setSelectedOrder(null)}
       >
-        <View style={styles.modalContainer}>
-          <View style={styles.modalContent}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalBox}>
             <Text style={styles.modalTitle}>
-              Order Details - ORDER {selectedOrder?.orderid.toUpperCase()}
+              Order Details — #{selectedOrder?.orderid.toUpperCase()}
             </Text>
-            <ScrollView style={styles.orderItemsContainer}>
-              {selectedOrder?.orderItems?.length > 0 ? (
-                selectedOrder.orderItems.map((item, idx) => {
-                  const product = products.find(p => String(p.id) === String(item.productId));
-                  return (
-                    <View key={idx} style={styles.orderItemRow}>
-                      <View style={styles.productImageContainer}>
-                        {product?.productImage ? (
-                          <Image source={{ uri: product.productImage }} style={styles.productImage} />
-                        ) : (
-                          <View style={styles.placeholderImage} />
-                        )}
-                      </View>
-                      <View style={styles.productDetails}>
-                        <Text style={styles.productName}>{product?.name || 'Unnamed Product'}</Text>
-                        <Text>Price: KSH {product?.price?.toFixed(2) || 'N/A'}</Text>
-                      </View>
-                      <View style={styles.quantityContainer}>
-                        <Text>Qty: {item.quantity}</Text>
-                      </View>
+            <ScrollView style={styles.modalContent}>
+              {selectedOrder?.orderItems?.map((item, idx) => {
+                const prod = products.find(
+                  (p) => String(p.id) === String(item.productId)
+                ) || {};
+
+                return (
+                  <View key={idx} style={styles.itemRow}>
+                    {prod.productImage ? (
+                      <Image
+                        source={{ uri: prod.productImage }}
+                        style={styles.itemImage}
+                      />
+                    ) : (
+                      <View style={styles.placeholderImage} />
+                    )}
+                    <View style={styles.itemInfo}>
+                      <Text style={styles.itemName}>
+                        {prod.name || 'Unnamed'}
+                      </Text>
+                      <Text>Qty: {item.quantity}</Text>
+                      <Text>
+                        Price:{' '}
+                        {prod.price != null
+                          ? `KSH ${prod.price.toFixed(2)}`
+                          : 'N/A'}
+                      </Text>
                     </View>
-                  );
-                })
-              ) : (
-                <Text style={styles.centeredText}>No products found in this order.</Text>
+                  </View>
+                );
+              }) || (
+                <Text style={styles.centerText}>
+                  No items in this order.
+                </Text>
               )}
             </ScrollView>
-            <TouchableOpacity style={styles.closeButton} onPress={handleCloseOrderModal}>
-              <Text style={styles.closeButtonText}>Close</Text>
+            <TouchableOpacity
+              style={styles.closeBtn}
+              onPress={() => setSelectedOrder(null)}
+            >
+              <Text style={styles.closeText}>Close</Text>
             </TouchableOpacity>
           </View>
         </View>
       </Modal>
 
-      {/** Loading Modal **/}
-      {isApiLoading && (
-        <Modal visible transparent animationType="none">
-          <View style={styles.loadingModalContainer}>
-            <View style={styles.loadingModalContent}>
-              <ActivityIndicator size="large" color="#0000ff" />
-              <Text style={styles.loadingText}>Fetching your orders...</Text>
-            </View>
-          </View>
-        </Modal>
-      )}
-    </ScrollView>
+      {/* Full-width Bottom Navigation */}
+     <View style={styles.navbar}>
+  <TouchableOpacity style={styles.navItem} onPress={() => router.replace('./Home')}>
+    <FontAwesome name="home" size={24}  />
+    <Text>Home</Text>
+  </TouchableOpacity>
+  <TouchableOpacity style={styles.navItem} onPress={() => router.replace('./Package')}>
+    <FontAwesome name="ticket" size={24} />
+    <Text>My Orders</Text>
+  </TouchableOpacity>
+  <TouchableOpacity style={styles.navItem} onPress={() => router.replace('./Profile')}>
+    <FontAwesome name="user" size={24} color="blue" />
+    <Text>Profile</Text>
+  </TouchableOpacity>
+</View>
+
+    </>
   );
 };
 
 const styles = StyleSheet.create({
-  backButton: {
-    position: 'absolute',
-    top: 20,
-    left: 16,
-    zIndex: 1
-  },
   container: {
     padding: 16,
     backgroundColor: '#FFF8E1',
-    flexGrow: 1,
-    paddingBottom: 60
+    paddingBottom: 80, // space for nav
   },
-  title: {
-    fontSize: 18,
+  header: {
+    fontSize: 20,
     fontWeight: 'bold',
     textAlign: 'center',
-    marginVertical: 16
+    marginBottom: 16,
   },
-  fieldRow: {
+  row: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginVertical: 8,
-    alignItems: 'center'
-  },
-  label: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    flex: 0.4
-  },
-  fieldValue: {
-    flexDirection: 'row',
     alignItems: 'center',
-    flex: 0.6,
-    justifyContent: 'space-between'
+    marginVertical: 8,
   },
-  fieldText: {
-    fontSize: 16,
-    marginRight: 8
-  },
-  centeredText: {
-    textAlign: 'center',
-    marginVertical: 10
-  },
-  errorText: {
-    color: 'red',
-    textAlign: 'center',
-    marginVertical: 10
-  },
-  logoutButton: {
+  label: { fontSize: 16, fontWeight: '600' },
+  valueRow: { flexDirection: 'row', alignItems: 'center' },
+  valueText: { fontSize: 16 },
+  logoutBtn: {
     backgroundColor: 'red',
-    padding: 10,
+    padding: 12,
     borderRadius: 8,
     alignItems: 'center',
-    marginVertical: 20
+    marginVertical: 16,
   },
-  logoutText: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: 'bold'
+  logoutText: { color: '#fff', fontWeight: 'bold', fontSize: 16 },
+  sectionHeader: {
+    fontSize: 18,
+    fontWeight: '700',
+    marginVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#ddd',
+    paddingBottom: 4,
   },
-  orderRow: {
+  orderList: { paddingBottom: 20 },
+  orderCard: {
+    backgroundColor: '#fff',
+    borderRadius: 8,
+    padding: 12,
+    marginVertical: 6,
+    elevation: 2,
+  },
+  orderCardHeader: { flexDirection: 'row', justifyContent: 'space-between' },
+  orderId: { fontWeight: '600' },
+  orderDate: { color: '#777' },
+  orderCardBody: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: '#ddd'
-  },
-  orderInfo: {
-    flex: 1
-  },
-  orderText: {
-    fontSize: 16,
-    fontWeight: 'bold'
-  },
-  orderActions: {
-    flexDirection: 'row',
-    alignItems: 'center'
-  },
-  statusIcon: {
-    marginLeft: 8,
-    paddingHorizontal: 15
-  },
-  viewLink: {
-    color: 'blue',
-    textDecorationLine: 'underline'
-  },
-  bottomNavigation: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    flexDirection: 'row',
-    justifyContent: 'space-around',
+    marginTop: 8,
     alignItems: 'center',
-    height: 60,
-    borderTopWidth: 1,
-    borderTopColor: '#ccc',
-    backgroundColor: '#FFF8E1',
-    paddingBottom: 8
   },
-  navItem: {
-    alignItems: 'center'
-  },
-  modalContainer: {
+  orderStatus: { fontWeight: '600', textTransform: 'capitalize' },
+  centerText: { textAlign: 'center', marginVertical: 16, color: '#555' },
+  modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    backgroundColor: 'rgba(0,0,0,0.4)',
     justifyContent: 'center',
-    alignItems: 'center'
+    alignItems: 'center',
   },
-  modalContent: {
-    backgroundColor: 'white',
+  modalBox: {
+    backgroundColor: '#fff',
+    width: '85%',
     borderRadius: 10,
-    padding: 20,
-    width: '80%'
+    padding: 16,
+    maxHeight: '80%',
   },
   modalTitle: {
     fontSize: 18,
-    fontWeight: 'bold',
-    marginBottom: 15
+    fontWeight: '700',
+    marginBottom: 12,
+    textAlign: 'center',
   },
-  input: {
-    borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 5,
-    padding: 10,
-    marginBottom: 15
-
-  },
-  modalButtonRow: {
+  modalContent: { marginBottom: 12 },
+  itemRow: {
     flexDirection: 'row',
-    justifyContent: 'flex-end'
-  },
-  modalButton: {
-    padding: 10,
-    borderRadius: 5,
-    marginLeft: 10
-  },
-  cancelButton: {
-    backgroundColor: '#ccc'
-  },
-  submitButton: {
-    backgroundColor: '#007bff'
-  },
-  modalButtonText: {
-    color: 'white',
-    fontWeight: 'bold'
-  },
-  orderItemsContainer: {
-    maxHeight: 400,
-    marginBottom: 15
-  },
-  orderItemRow: {
-    flexDirection: 'row',
+    marginBottom: 12,
     alignItems: 'center',
-    marginBottom: 15
   },
-  productImageContainer: {
-    width: 80,
-    marginRight: 10
-  },
-  productImage: {
-    width: 80,
-    height: 80,
-    resizeMode: 'cover'
+  itemImage: {
+    width: 60,
+    height: 60,
+    borderRadius: 6,
+    marginRight: 12,
+    backgroundColor: '#eee',
   },
   placeholderImage: {
-    width: 80,
-    height: 80,
-    backgroundColor: '#ccc'
-  },
-  productDetails: {
-    flex: 1
-  },
-  productName: {
-    fontWeight: 'bold',
-    fontSize: 16,
-    marginBottom: 5
-  },
-  quantityContainer: {
     width: 60,
-    alignItems: 'center'
+    height: 60,
+    borderRadius: 6,
+    marginRight: 12,
+    backgroundColor: '#ccc',
   },
-  closeButton: {
-    backgroundColor: '#6c757d',
+  itemInfo: { flex: 1 },
+  itemName: { fontWeight: '600', marginBottom: 4 },
+  closeBtn: {
+    backgroundColor: '#4B2C20',
     padding: 10,
-    borderRadius: 5,
+    borderRadius: 6,
     alignItems: 'center',
-    marginTop: 15
   },
-  closeButtonText: {
-    color: 'white',
-    fontWeight: 'bold'
-  },
-  loadingModalContainer: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center',
-    alignItems: 'center'
-  },
-  loadingModalContent: {
-    backgroundColor: 'white',
-    borderRadius: 10,
-    padding: 20,
-    alignItems: 'center'
-  },
-  loadingText: {
-    marginTop: 10,
-    fontSize: 16
-  }
+  closeText: { color: '#fff', fontWeight: '600' },
+
+  // Full-width Bottom Nav
+ navbar: { flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center', height: 50, borderTopWidth: 1, borderTopColor: '#ccc', backgroundColor: '#FFF8E1' },
+  navItem: { alignItems: 'center' },
 });
 
 export default ProfilePage;

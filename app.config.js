@@ -26,6 +26,9 @@ export default ({ config }) => ({
       supportsTablet: true,
       bundleIdentifier: "com.mgachanja.Arpella",
       infoPlist: {
+        "NSAppTransportSecurity": {
+          "NSAllowsArbitraryLoads": true
+        },
         NSLocationWhenInUseUsageDescription: "We need your location to show your current position on the map",
         NSLocationAlwaysUsageDescription: "We need your location to show your current position on the map",
       },
