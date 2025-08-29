@@ -11,6 +11,7 @@ import {
   TextInput,
   ActivityIndicator,
   Platform,
+  useWindowDimensions,
 } from 'react-native';
 import { useDispatch, useSelector } from 'react-redux';
 import { addItemToCart } from '../redux/slices/cartSlice';
@@ -265,6 +266,11 @@ const Index = () => {
   // categories FlatList ref for scrollToIndex
   const categoriesRef = useRef(null);
 
+  // --- respond to orientation: portrait -> 2 columns, landscape -> 4 columns
+  const { width, height } = useWindowDimensions();
+  const isLandscape = width > height;
+  const numColumns = isLandscape ? 4 : 2;
+
   // -------------------------------
   // Helpers: resolve ids / image urls
   // -------------------------------
@@ -393,10 +399,21 @@ const Index = () => {
   // image container height increased to give more downward length
   // -------------------------------
   const renderProductCard = useCallback(({ item, index }) => {
+    // compute card width & image height dynamically so layout is consistent across columns
+    const horizontalPadding = 15 * 2; // container paddingHorizontal * 2
+    const totalAvailable = Math.max(0, width - horizontalPadding);
+    const perCardGutter = 16; // estimate: marginLeft + marginRight (8 + 8)
+    const cardWidth = Math.floor((totalAvailable - (numColumns * perCardGutter)) / numColumns);
+    const imageContainerHeight = isLandscape ? 140 : 200;
+
     return (
-      <TouchableOpacity style={styles.card} onPress={() => onSelectProduct(item)}>
-        <View style={{ width: '100%', height: 200, backgroundColor: '#f8f8f8' }}>
-          <ProductImage product={item} style={{ width: '75%', height: '100%' }} resizeMode="cover" />
+      <TouchableOpacity
+        style={[styles.card, { width: cardWidth, margin: 8 }]}
+        onPress={() => onSelectProduct(item)}
+      >
+        <View style={{ width: '100%', height: imageContainerHeight, backgroundColor: '#f8f8f8', justifyContent: 'center', alignItems: 'center' }}>
+          {/* pass explicit style to ProductImage so fallback sizing works */}
+          <ProductImage product={item} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
         </View>
         <Text style={styles.productName}>{item.name || item.productName || 'Unnamed Product'}</Text>
         <View style={styles.priceWrapper}>
@@ -404,7 +421,7 @@ const Index = () => {
         </View>
       </TouchableOpacity>
     );
-  }, [onSelectProduct]);
+  }, [onSelectProduct, width, numColumns, isLandscape]);
 
   // -------------------------------
   // Category renderer
@@ -511,10 +528,10 @@ const Index = () => {
       {/* Subcategory Tabs */}
       {currentCategory.id !== 'All' && currentCategory.subcategories.length > 0 && (
         <View style={styles.categoriesWrapper}>
-          <View style={{ 
-            backgroundColor: '#f8f8f8', 
-            borderRadius: 8, 
-            marginHorizontal: 5, 
+          <View style={{
+            backgroundColor: '#f8f8f8',
+            borderRadius: 8,
+            marginHorizontal: 5,
             paddingVertical: 8,
             elevation: 1,
             shadowColor: '#000',
@@ -527,10 +544,10 @@ const Index = () => {
               horizontal
               showsHorizontalScrollIndicator={false}
               keyExtractor={(item) => String(item.id ?? item._id ?? item.name)}
-              contentContainerStyle={{ 
-                alignItems: 'center', 
+              contentContainerStyle={{
+                alignItems: 'center',
                 paddingHorizontal: 10,
-                gap: 8 
+                gap: 8
               }}
               renderItem={({ item }) => (
                 <TouchableOpacity
@@ -578,13 +595,16 @@ const Index = () => {
         ) : (
           <FlatList
             data={filteredProducts}
-            numColumns={2}
-            extraData={[currentCategory?.id, currentSubcategory?.id, searchTerm, currentPage, hasMore]}
+            numColumns={numColumns} // dynamic: 2 => portrait, 4 => landscape
+            extraData={[currentCategory?.id, currentSubcategory?.id, searchTerm, currentPage, hasMore, numColumns]}
             keyExtractor={keyExtractor}
             renderItem={renderProductCard}
             onEndReached={handleLoadMore}
             onEndReachedThreshold={0.6}
             ListFooterComponent={ListFooterComponent}
+            // force rerender when columns change
+            key={`cols-${numColumns}`}
+            contentContainerStyle={{ paddingBottom: 120 }}
           />
         )}
       </View>
@@ -594,10 +614,10 @@ const Index = () => {
         <Modal visible={modalVisible} animationType="slide" onRequestClose={() => setModalVisible(false)}>
           <View style={styles.modal}>
             {/* Close button */}
-            <View style={{ 
-              position: 'absolute', 
-              top: 40, 
-              right: 20, 
+            <View style={{
+              position: 'absolute',
+              top: 40,
+              right: 20,
               zIndex: 10,
               backgroundColor: 'rgba(0,0,0,0.1)',
               borderRadius: 25,
@@ -714,8 +734,8 @@ const styles = StyleSheet.create({
   filterTextActive: { color: '#fff' },
   products: { flex: 1, marginBottom: 10 },
   card: {
-    flex: 1,
-    margin: 8,
+    // removed flex:1 and rely on computed width to ensure correct columns
+    // margin is applied inline where we compute card width
     borderWidth: 1,
     borderColor: '#ccc',
     borderRadius: 8,
@@ -725,7 +745,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     elevation: 3,
   },
-  image: { width: '100%', height: 100, marginBottom: 20, resizeMode: 'fit' }, // increased height
+  image: { width: '100%', height: 100, marginBottom: 20, resizeMode: 'fit' }, // kept
   productName: { fontSize: 16, fontWeight: 'bold', marginBottom: 6, textAlign: 'center', paddingHorizontal: 5 },
   // improved price styling
   priceWrapper: { marginBottom: 8 },

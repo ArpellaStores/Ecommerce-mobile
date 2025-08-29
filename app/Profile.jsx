@@ -1,10 +1,8 @@
 // screens/ProfilePage.js
-
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
-  ScrollView,
   TouchableOpacity,
   StyleSheet,
   Switch,
@@ -12,6 +10,9 @@ import {
   Modal,
   FlatList,
   Image,
+  SafeAreaView,
+  useWindowDimensions,
+  ScrollView,
 } from 'react-native';
 import FontAwesome from 'react-native-vector-icons/FontAwesome';
 import { useRouter, usePathname } from 'expo-router';
@@ -21,346 +22,423 @@ import * as SecureStore from 'expo-secure-store';
 import { logout } from '../redux/slices/authSlice';
 import { clearCredentials, exitApp } from '../services/Auth';
 import { baseUrl } from '../constants/const';
+import { Platform } from 'react-native';
+
+/**
+ * ProfilePage
+ * - Order modal items now use the same structure/priority as the web implementation:
+ *   prefer item.product, fallback to redux product lookup by productId,
+ *   compute unitPrice, qty, subtotal and order total.
+ */
 
 const ProfilePage = () => {
   const router = useRouter();
-  const pathname = usePathname(); // current route path
+  const pathname = usePathname();
   const dispatch = useDispatch();
-  const { user, isAuthenticated } = useSelector((s) => s.auth);
-  const products = useSelector((s) => s.products.products);
+  const { user, isAuthenticated } = useSelector((s) => s.auth || {});
+  // support both normalized and array product stores
+  const productsArray = useSelector((s) => s.products?.products || []);
+  const productsById = useSelector((s) => s.products?.productsById || {});
 
   const [autoEnabled, setAutoEnabled] = useState(true);
   const [orders, setOrders] = useState([]);
   const [loadingOrders, setLoadingOrders] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState(null);
+  const [modalVisible, setModalVisible] = useState(false);
 
-  // Load rememberMe flag
+  const dims = useWindowDimensions();
+  const isLandscape = dims.width > dims.height;
+
+  // load rememberMe flag
   useEffect(() => {
     (async () => {
-      const rem = await SecureStore.getItemAsync('rememberMe');
-      setAutoEnabled(rem === 'true');
+      try {
+        const rem = await SecureStore.getItemAsync('rememberMe');
+        setAutoEnabled(rem === 'true');
+      } catch (e) {
+        setAutoEnabled(false);
+      }
     })();
   }, []);
 
-  // Fetch order history
+  // orders fetch
   useEffect(() => {
     const fetchOrders = async () => {
       setLoadingOrders(true);
       try {
         const { data } = await axios.get(`${baseUrl}/orders`);
-        const filtered = data.filter(o =>
-          String(o.userId) === String(user.id || user.phone)
+        if (!Array.isArray(data)) {
+          setOrders([]);
+          return;
+        }
+        // match user by id or phone (robust)
+        const matchKey = String(user?.id ?? user?.phone ?? user?.phoneNumber ?? '');
+        const filtered = data.filter((o) =>
+          String(o.userId || o.user || '').trim() === matchKey.trim()
         );
         setOrders(filtered);
       } catch (e) {
         console.error('Fetch orders error', e);
+        setOrders([]);
       } finally {
         setLoadingOrders(false);
       }
     };
+
     if (isAuthenticated) fetchOrders();
   }, [user, isAuthenticated]);
 
-  // Toggle auto‑login
+  // toggle auto-login
   const onToggleAuto = async (value) => {
     setAutoEnabled(value);
     if (!value) {
       await clearCredentials();
+      await SecureStore.setItemAsync('rememberMe', 'false');
     } else {
       await SecureStore.setItemAsync('rememberMe', 'true');
     }
   };
 
-  // Logout & exit
   const onLogout = async () => {
     await clearCredentials();
     dispatch(logout());
     exitApp();
   };
 
-  const renderOrderItem = ({ item }) => (
-    <TouchableOpacity
-      style={styles.orderCard}
-      onPress={() => setSelectedOrder(item)}
-    >
-      <View style={styles.orderCardHeader}>
-        <Text style={styles.orderId}>Order #{item.orderid.toUpperCase()}</Text>
-        <Text style={styles.orderDate}>{new Date(item.date).toLocaleDateString()}</Text>
-      </View>
-      <View style={styles.orderCardBody}>
-        <Text>
-          Status:{' '}
-          <Text style={styles.orderStatus}>{item.status || 'N/A'}</Text>
-        </Text>
-        <FontAwesome
-          name={
-            item.status === 'fulfilled'
-              ? 'check-circle'
-              : item.status === 'in transit'
-              ? 'truck'
-              : 'hourglass'
-          }
-          size={20}
-          color="#4B2C20"
-        />
-      </View>
-    </TouchableOpacity>
+  // redux lookup helper (memoized)
+  const lookupProductFromRedux = useMemo(() => {
+    return (productId) => {
+      if (!productId) return null;
+      // direct normalized lookup
+      if (productsById && productsById[productId]) return productsById[productId];
+      // tolerant search in normalized values
+      const found = Object.values(productsById || {}).find(
+        (p) =>
+          String(p?.id) === String(productId) ||
+          String(p?._id) === String(productId) ||
+          String(p?.productId) === String(productId)
+      );
+      if (found) return found;
+      // fallback to array
+      return (productsArray || []).find(
+        (p) =>
+          String(p?.id) === String(productId) ||
+          String(p?._id) === String(productId) ||
+          String(p?.productId) === String(productId)
+      ) || null;
+    };
+  }, [productsById, productsArray]);
+
+  // Header for FlatList (keeps profile + controls)
+  const renderHeader = () => (
+    <View style={styles.headerContainer}>
+      <Text style={styles.header}>Personal Details</Text>
+      {isAuthenticated ? (
+        <>
+          {['firstName','lastName','email','phone'].map((field) => (
+            <View key={field} style={styles.row}>
+              <Text style={styles.label}>
+                {field === 'phone' ? 'Phone:' :
+                 field === 'email' ? 'Email:' :
+                 `${field.replace(/Name/, ' Name')}:`}
+              </Text>
+              <View style={styles.valueRow}>
+                <Text style={styles.valueText}>{user?.[field] ?? 'N/A'}</Text>
+              </View>
+            </View>
+          ))}
+          <View style={styles.row}>
+            <Text style={styles.label}>Enable Auto-login:</Text>
+            <Switch value={autoEnabled} onValueChange={onToggleAuto} />
+          </View>
+        </>
+      ) : (
+        <Text style={styles.centerText}>No user data. Please log in.</Text>
+      )}
+
+      <TouchableOpacity style={styles.logoutBtn} onPress={onLogout}>
+        <Text style={styles.logoutText}>Logout & Exit</Text>
+      </TouchableOpacity>
+
+      <Text style={styles.sectionHeader}>Order History</Text>
+      {loadingOrders && (
+        <View style={{ paddingVertical: 12 }}>
+          <ActivityIndicator size="large" color="#4B2C20" />
+        </View>
+      )}
+      {!loadingOrders && orders.length === 0 && (
+        <Text style={styles.centerText}>You have no past orders.</Text>
+      )}
+    </View>
   );
 
-  // Helper to render nav item
-  const NavItem = ({ route, icon, label }) => {
-    const isActive = pathname === route;
+  // order row open
+  const openOrder = (order) => {
+    setSelectedOrder(order);
+    setModalVisible(true);
+  };
+
+  const closeOrderModal = () => {
+    setModalVisible(false);
+    setSelectedOrder(null);
+  };
+
+  // each order row renderer
+  const renderOrderItem = ({ item }) => {
     return (
-      <TouchableOpacity
-        disabled={isActive}
-        onPress={() => !isActive && router.replace(route)}
-        style={styles.navItem}
-      >
-        <FontAwesome
-          name={icon}
-          size={24}
-          color={isActive ? 'blue' : '#000'}
-        />
-        <Text style={[styles.navLabel, isActive && { color: 'blue' }]}>
-          {label}
-        </Text>
+      <TouchableOpacity style={styles.orderCard} onPress={() => openOrder(item)}>
+        <View style={styles.orderCardHeader}>
+          <Text style={styles.orderId}>Order #{String(item?.orderid || item?.orderId || '').toUpperCase()}</Text>
+          <Text style={styles.orderDate}>
+            {item?.date ? new Date(item.date).toLocaleDateString() : ''}
+          </Text>
+        </View>
+        <View style={styles.orderCardBody}>
+          <Text>
+            Status:{' '}
+            <Text style={styles.orderStatus}>{item.status || 'N/A'}</Text>
+          </Text>
+          <FontAwesome
+            name={
+              item.status === 'fulfilled'
+                ? 'check-circle'
+                : item.status === 'in transit'
+                ? 'truck'
+                : 'hourglass'
+            }
+            size={20}
+            color="#4B2C20"
+          />
+        </View>
       </TouchableOpacity>
     );
   };
 
+  /**
+   * Web-parity helpers for order items & price math
+   * - getOrderItems supports multiple server variants
+   * - computeUnitPrice follows priority:
+   *    productFromOrder?.price || productFromOrder?.unitPrice || productFromRedux?.price || item.price || 0
+   */
+
+  const getOrderItems = (order) => {
+    if (!order) return [];
+    // include the variants your backend may use
+    return (
+      order.orderitem ||
+      order.orderItems ||
+      order.order_item ||
+      order.items ||
+      order.itemsOrdered ||
+      []
+    );
+  };
+
+  const computeUnitPrice = (item) => {
+    const productFromOrder = item.product || null;
+    const productFromRedux = lookupProductFromRedux(item.productId);
+    const unitPrice = Number(
+      productFromOrder?.price ??
+      productFromOrder?.unitPrice ??
+      productFromRedux?.price ??
+      item.price ??
+      0
+    ) || 0;
+    return unitPrice;
+  };
+
+  const computeItemSubtotal = (item) => {
+    const unitPrice = computeUnitPrice(item);
+    const qty = Number(item.quantity || 0);
+    return unitPrice * qty;
+  };
+
+  const computeOrderTotal = (order) => {
+    const items = getOrderItems(order);
+    return items.reduce((acc, it) => acc + computeItemSubtotal(it), 0);
+  };
+
+  // dynamic modal sizing
+  const modalWidth = isLandscape ? Math.min(900, dims.width * 0.9) : Math.min(600, dims.width * 0.92);
+  const modalMaxHeight = isLandscape ? dims.height * 0.9 : dims.height * 0.8;
+
   return (
-    <>
-      <ScrollView contentContainerStyle={styles.container}>
-        {/* Personal Details */}
-        <Text style={styles.header}>Personal Details</Text>
-        {isAuthenticated ? (
-          <>
-            {['firstName','lastName','email','phone'].map(field => (
-              <View key={field} style={styles.row}>
-                <Text style={styles.label}>
-                  {field === 'phone' ? 'Phone:' :
-                   field === 'email' ? 'Email:' :
-                   `${field.replace(/Name/, ' Name')}:`}
-                </Text>
-                <View style={styles.valueRow}>
-                  <Text style={styles.valueText}>{user[field] || 'N/A'}</Text>
-                </View>
-              </View>
-            ))}
-            <View style={styles.row}>
-              <Text style={styles.label}>Enable Auto‑login:</Text>
-              <Switch value={autoEnabled} onValueChange={onToggleAuto} />
-            </View>
-          </>
-        ) : (
-          <Text style={styles.centerText}>No user data. Please log in.</Text>
-        )}
+    <SafeAreaView style={styles.safe}>
+      <FlatList
+        data={orders}
+        keyExtractor={(item) => String(item?.orderid || item?.orderId || Math.random())}
+        renderItem={renderOrderItem}
+        contentContainerStyle={styles.listContainer}
+        ListHeaderComponent={renderHeader}
+        removeClippedSubviews={true}
+      />
 
-        <TouchableOpacity style={styles.logoutBtn} onPress={onLogout}>
-          <Text style={styles.logoutText}>Logout & Exit</Text>
-        </TouchableOpacity>
-
-        {/* Order History */}
-        <Text style={styles.sectionHeader}>Order History</Text>
-        {loadingOrders ? (
-          <ActivityIndicator size="large" color="#4B2C20" />
-        ) : orders.length === 0 ? (
-          <Text style={styles.centerText}>You have no past orders.</Text>
-        ) : (
-          <FlatList
-            data={orders}
-            renderItem={renderOrderItem}
-            keyExtractor={item => item.orderid.toString()}
-            contentContainerStyle={styles.orderList}
-          />
-        )}
-      </ScrollView>
-
-      {/* Order Details Modal */}
+      {/* Order Details Modal (web-parity) */}
       <Modal
-        visible={!!selectedOrder}
+        visible={modalVisible}
         transparent
         animationType="slide"
-        onRequestClose={() => setSelectedOrder(null)}
+        supportedOrientations={['portrait', 'landscape']}
+        onRequestClose={closeOrderModal}
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalBox}>
+        <View style={[styles.modalOverlay, { zIndex: 9999, elevation: 20 }]}>
+          <View
+            style={[
+              styles.modalBox,
+              { width: modalWidth, maxHeight: modalMaxHeight, elevation: 30, zIndex: 10000 },
+            ]}
+          >
             <Text style={styles.modalTitle}>
-              Order Details — #{selectedOrder?.orderid.toUpperCase()}
+              Order Details — #{String(selectedOrder?.orderid || selectedOrder?.orderId || '').toUpperCase()}
             </Text>
-            <ScrollView style={styles.modalContent}>
-              {selectedOrder?.orderItems?.map((item, idx) => {
-                const prod = products.find(
-                  (p) => String(p.id) === String(item.productId)
-                ) || {};
 
-                return (
-                  <View key={idx} style={styles.itemRow}>
-                    {prod.productImage ? (
-                      <Image
-                        source={{ uri: prod.productImage }}
-                        style={styles.itemImage}
-                      />
-                    ) : (
-                      <View style={styles.placeholderImage} />
-                    )}
-                    <View style={styles.itemInfo}>
-                      <Text style={styles.itemName}>
-                        {prod.name || 'Unnamed'}
-                      </Text>
-                      <Text>Qty: {item.quantity}</Text>
-                      <Text>
-                        Price:{' '}
-                        {prod.price != null
-                          ? `KSH ${prod.price.toFixed(2)}`
-                          : 'N/A'}
-                      </Text>
-                    </View>
+            <ScrollView contentContainerStyle={styles.modalContent}>
+              {selectedOrder ? (
+                <>
+                  <View style={styles.metaRow}>
+                    <Text style={styles.metaLabel}>Status:</Text>
+                    <Text style={styles.metaValue}>{selectedOrder.status || '—'}</Text>
                   </View>
-                );
-              }) || (
-                <Text style={styles.centerText}>
-                  No items in this order.
-                </Text>
+                  <View style={styles.metaRow}>
+                    <Text style={styles.metaLabel}>Placed:</Text>
+                    <Text style={styles.metaValue}>
+                      {selectedOrder.createdAt ? new Date(selectedOrder.createdAt).toLocaleString() : (selectedOrder.date ? new Date(selectedOrder.date).toLocaleString() : '—')}
+                    </Text>
+                  </View>
+
+                  <View style={{ height: 12 }} />
+
+                  {/* Items: web-parity rendering */}
+                  {getOrderItems(selectedOrder).length > 0 ? (
+                    getOrderItems(selectedOrder).map((item, i) => {
+                      const productFromOrder = item.product || null;
+                      const productFromRedux = lookupProductFromRedux(item.productId);
+                      const name = productFromOrder?.name || productFromRedux?.name || productFromOrder?.title || `Product ${item.productId || i + 1}`;
+                      const unitPrice = computeUnitPrice(item);
+                      const qty = Number(item.quantity || 0);
+                      const subtotal = unitPrice * qty;
+                      const imageUri = productFromRedux?.productImage || productFromOrder?.imageUrl || productFromOrder?.productImage || null;
+
+                      return (
+                        <View key={String(i)} style={styles.itemRowModal}>
+                          <View style={styles.itemImageWrapper}>
+                            {imageUri ? (
+                              <Image source={{ uri: imageUri }} style={styles.itemImageModal} />
+                            ) : (
+                              <View style={styles.placeholderImageModal}>
+                                <Text style={{ color: '#666', fontSize: 12 }}>No image</Text>
+                              </View>
+                            )}
+                          </View>
+
+                          <View style={styles.itemMetaWrapper}>
+                            <Text style={styles.itemName}>{name}</Text>
+                            <Text style={styles.itemMetaText}>Price: KSH {unitPrice.toFixed(2)}</Text>
+                            {item.productId ? <Text style={styles.itemSmall}>ID: {item.productId}</Text> : null}
+                          </View>
+
+                          <View style={styles.itemQtyWrapper}>
+                            <Text style={styles.itemMetaText}>Qty: {qty}</Text>
+                            <Text style={styles.itemSubtotal}>Subtotal: KSH {subtotal.toFixed(2)}</Text>
+                          </View>
+                        </View>
+                      );
+                    })
+                  ) : (
+                    <Text style={styles.centerText}>No items in this order.</Text>
+                  )}
+
+                  <View style={styles.hr} />
+
+                  <View style={styles.totalRow}>
+                    <Text style={{ fontWeight: '700' }}>Order Total</Text>
+                    <Text style={{ fontWeight: '700' }}>KSH {computeOrderTotal(selectedOrder).toFixed(2)}</Text>
+                  </View>
+                </>
+              ) : (
+                <Text style={styles.centerText}>Loading order…</Text>
               )}
             </ScrollView>
-            <TouchableOpacity
-              style={styles.closeBtn}
-              onPress={() => setSelectedOrder(null)}
-            >
-              <Text style={styles.closeText}>Close</Text>
-            </TouchableOpacity>
+
+            <View style={styles.modalFooter}>
+              <TouchableOpacity style={styles.closeBtn} onPress={closeOrderModal}>
+                <Text style={styles.closeText}>Close</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>
 
-      {/* Full-width Bottom Navigation */}
-     <View style={styles.navbar}>
-  <TouchableOpacity style={styles.navItem} onPress={() => router.replace('./Home')}>
-    <FontAwesome name="home" size={24}  />
-    <Text>Home</Text>
-  </TouchableOpacity>
-  <TouchableOpacity style={styles.navItem} onPress={() => router.replace('./Package')}>
-    <FontAwesome name="ticket" size={24} />
-    <Text>My Orders</Text>
-  </TouchableOpacity>
-  <TouchableOpacity style={styles.navItem} onPress={() => router.replace('./Profile')}>
-    <FontAwesome name="user" size={24} color="blue" />
-    <Text>Profile</Text>
-  </TouchableOpacity>
-</View>
-
-    </>
+      {/* Bottom nav */}
+      <View style={styles.navbar}>
+        <TouchableOpacity style={styles.navItem} onPress={() => router.replace('./Home')}>
+          <FontAwesome name="home" size={24} />
+          <Text>Home</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.navItem} onPress={() => router.replace('./Package')}>
+          <FontAwesome name="ticket" size={24} />
+          <Text>My Orders</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.navItem} onPress={() => router.replace('./Profile')}>
+          <FontAwesome name="user" size={24} color="blue" />
+          <Text>Profile</Text>
+        </TouchableOpacity>
+      </View>
+    </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
-    padding: 16,
-    backgroundColor: '#FFF8E1',
-    paddingBottom: 80, // space for nav
-  },
-  header: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    textAlign: 'center',
-    marginBottom: 16,
-  },
-  row: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginVertical: 8,
-  },
+  safe: { flex: 1, backgroundColor: '#FFF8E1' },
+  listContainer: { paddingBottom: 100, paddingHorizontal: 16 },
+  headerContainer: { paddingTop: 8, paddingBottom: 8 },
+  header: { fontSize: 20, fontWeight: 'bold', textAlign: 'center', marginBottom: 12 },
+  row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginVertical: 8 },
   label: { fontSize: 16, fontWeight: '600' },
   valueRow: { flexDirection: 'row', alignItems: 'center' },
   valueText: { fontSize: 16 },
-  logoutBtn: {
-    backgroundColor: 'red',
-    padding: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-    marginVertical: 16,
-  },
+  logoutBtn: { backgroundColor: 'red', padding: 12, borderRadius: 8, alignItems: 'center', marginVertical: 12 },
   logoutText: { color: '#fff', fontWeight: 'bold', fontSize: 16 },
-  sectionHeader: {
-    fontSize: 18,
-    fontWeight: '700',
-    marginVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#ddd',
-    paddingBottom: 4,
-  },
-  orderList: { paddingBottom: 20 },
-  orderCard: {
-    backgroundColor: '#fff',
-    borderRadius: 8,
-    padding: 12,
-    marginVertical: 6,
-    elevation: 2,
-  },
+  sectionHeader: { fontSize: 18, fontWeight: '700', marginVertical: 12, borderBottomWidth: 1, borderBottomColor: '#ddd', paddingBottom: 4 },
+  orderCard: { backgroundColor: '#fff', borderRadius: 8, padding: 12, marginVertical: 6, elevation: 2 },
   orderCardHeader: { flexDirection: 'row', justifyContent: 'space-between' },
   orderId: { fontWeight: '600' },
   orderDate: { color: '#777' },
-  orderCardBody: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 8,
-    alignItems: 'center',
-  },
+  orderCardBody: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 8, alignItems: 'center' },
   orderStatus: { fontWeight: '600', textTransform: 'capitalize' },
-  centerText: { textAlign: 'center', marginVertical: 16, color: '#555' },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.4)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  modalBox: {
-    backgroundColor: '#fff',
-    width: '85%',
-    borderRadius: 10,
-    padding: 16,
-    maxHeight: '80%',
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    marginBottom: 12,
-    textAlign: 'center',
-  },
-  modalContent: { marginBottom: 12 },
-  itemRow: {
-    flexDirection: 'row',
-    marginBottom: 12,
-    alignItems: 'center',
-  },
-  itemImage: {
-    width: 60,
-    height: 60,
-    borderRadius: 6,
-    marginRight: 12,
-    backgroundColor: '#eee',
-  },
-  placeholderImage: {
-    width: 60,
-    height: 60,
-    borderRadius: 6,
-    marginRight: 12,
-    backgroundColor: '#ccc',
-  },
-  itemInfo: { flex: 1 },
-  itemName: { fontWeight: '600', marginBottom: 4 },
-  closeBtn: {
-    backgroundColor: '#4B2C20',
-    padding: 10,
-    borderRadius: 6,
-    alignItems: 'center',
-  },
+  centerText: { textAlign: 'center', marginVertical: 12, color: '#555' },
+
+  /* Modal */
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.44)', justifyContent: 'center', alignItems: 'center', padding: 12 },
+  modalBox: { backgroundColor: '#fff', borderRadius: 10, padding: 12 },
+  modalTitle: { fontSize: 18, fontWeight: '700', marginBottom: 8, textAlign: 'center' },
+  modalContent: { paddingBottom: 8 },
+
+  /* modal item rows (web-like layout) */
+  itemRowModal: { flexDirection: 'row', alignItems: 'center', marginBottom: 12, paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: '#f2f2f2' },
+  itemImageWrapper: { width: 80, height: 80, marginRight: 12, justifyContent: 'center', alignItems: 'center' },
+  itemImageModal: { width: 80, height: 80, borderRadius: 6, backgroundColor: '#eee' },
+  placeholderImageModal: { width: 80, height: 80, borderRadius: 6, backgroundColor: '#eee', justifyContent: 'center', alignItems: 'center' },
+  itemMetaWrapper: { flex: 1, paddingRight: 8 },
+  itemQtyWrapper: { width: 110, alignItems: 'flex-end' },
+  itemName: { fontWeight: '700', marginBottom: 4 },
+  itemMetaText: { color: '#757575', fontSize: 13 },
+  itemSmall: { color: '#999', fontSize: 12, marginTop: 4 },
+  itemSubtotal: { fontWeight: '700', marginTop: 8 },
+
+  hr: { height: 1, backgroundColor: '#eee', marginVertical: 12 },
+  totalRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6 },
+
+  metaRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 6 },
+  metaLabel: { color: '#757575' },
+  metaValue: { fontWeight: '600' },
+
+  modalFooter: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: 8 },
+  closeBtn: { backgroundColor: '#4B2C20', padding: 10, borderRadius: 6, alignItems: 'center' },
   closeText: { color: '#fff', fontWeight: '600' },
 
-  // Full-width Bottom Nav
- navbar: { flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center', height: 50, borderTopWidth: 1, borderTopColor: '#ccc', backgroundColor: '#FFF8E1' },
+  /* Bottom nav */
+  navbar: { position: 'absolute', bottom: 0, left: 0, right: 0, flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center', height: 50, borderTopWidth: 1, borderTopColor: '#ccc', backgroundColor: '#FFF8E1' },
   navItem: { alignItems: 'center' },
 });
 
