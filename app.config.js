@@ -5,7 +5,6 @@ export default ({ config }) => ({
     name: "Arpella",
     slug: "Arpella",
     version: "1.0.0",
-    orientation: "default",
     icon: "./assets/images/logo.jpeg",
     scheme: "Arpella",
     userInterfaceStyle: "automatic",
