@@ -6,6 +6,7 @@ import { Provider, useSelector } from 'react-redux'
 import store from '../redux/store'
 import { ToastProvider } from 'react-native-toast-notifications'
 import * as SecureStore from 'expo-secure-store'
+import * as ScreenOrientation from 'expo-screen-orientation'
 
 // 1) This inner component can safely call useSelector
 function AppContent() {
@@ -14,6 +15,13 @@ function AppContent() {
   const [initialRoute, setInitialRoute] = useState(null)
   const isAuthenticated = useSelector(s => s.auth.isAuthenticated)
   const reduxLoading   = useSelector(s => s.auth.loading)
+
+  // Unlock orientation when app starts
+  useEffect(() => {
+    ScreenOrientation.unlockAsync().catch(error => {
+      console.warn('Failed to unlock screen orientation:', error)
+    })
+  }, [])
 
   // fetch existing token
   useEffect(() => {
@@ -30,7 +38,7 @@ function AppContent() {
     router.replace(`/${target}`)
   }, [isChecking, initialRoute, isAuthenticated, router])
 
-  // splash while we’re checking SecureStore
+  // splash while we're checking SecureStore
   if (isChecking) {
     return (
       <SafeAreaView style={styles.fullScreen}>
