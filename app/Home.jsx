@@ -240,7 +240,7 @@ const ProductImage = ({ product, style, resizeMode = 'cover' }) => {
   return <View style={[{ backgroundColor: '#f8f8f8' }, style]} />;
 };
 
-const Index = () => {
+const Home = () => {
   const dispatch = useDispatch();
   const router = useRouter();
   const {
@@ -789,4 +789,4 @@ const styles = StyleSheet.create({
   navItem: { alignItems: 'center' },
 });
 
-export default Index;
+export default Home;
