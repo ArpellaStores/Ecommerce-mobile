@@ -305,7 +305,7 @@ const Checkout = () => {
                 <Text style={styles.inputLabel}>M-Pesa Payment Number</Text>
                 <TextInput
                   style={styles.input}
-                  placeholder="e.g., 0712345678"
+                  placeholder="e.g., 254712345678"
                   value={mpesaNumber}
                   onChangeText={setMpesaNumber}
                   keyboardType="phone-pad"
