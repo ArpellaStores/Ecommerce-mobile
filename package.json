@@ -26,7 +26,7 @@
     "@types/react-redux": "^7.1.34",
     "axios": "^1.7.9",
     "dotenv": "^16.5.0",
-    "expo": "53.0.20",
+    "expo": "^53.0.20",
     "expo-blur": "~14.1.5",
     "expo-constants": "~17.1.7",
     "expo-crypto": "~14.1.5",

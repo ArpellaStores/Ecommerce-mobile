@@ -11,7 +11,7 @@ export default ({ config }) => ({
     userInterfaceStyle: "automatic",
 
     splash: {
-      image: "./assets/images/splash-icon.png",
+      image: "./assets/images/logo.jpeg",
       resizeMode: "contain",
       backgroundColor: "#ffffff"
     },
