@@ -27,7 +27,10 @@ import { baseUrl } from '../constants/const.js';
  * - Displays cart summary and total
  * - Opens a checkout modal to collect M-Pesa number, location, and ID/passport
  * - Submits order to backend and handles success/failure
+ *
+ * NOTE: Only the payment-success modal UI copy is simplified here.
  */
+
 const Checkout = () => {
   const dispatch = useDispatch();
   const router = useRouter();
@@ -73,7 +76,6 @@ const Checkout = () => {
       setLocation(coords);
       return coords;
     } catch (e) {
-      // keep UI friendly and return null to allow fallback
       Alert.alert('Location Error', 'Unable to get your current location. Try again.');
       return null;
     } finally {
@@ -116,7 +118,7 @@ const Checkout = () => {
 
     try {
       // Resolve coordinates: prefer user-granted location, otherwise try to fetch,
-      // otherwise fall back to Nairobi CBD coordinates (same behavior as web fallback).
+      // otherwise fall back to Nairobi CBD coordinates.
       let coords = location;
       if (!coords) {
         try {
@@ -146,20 +148,15 @@ const Checkout = () => {
 
       // axios already parses JSON into response.data
       if (response.status >= 200 && response.status < 300) {
+        // Show the simplified payment instructions UI (persistent)
         setPaymentSuccess(true);
         dispatch(clearCart());
-        setTimeout(() => {
-          setPaymentSuccess(false);
-          setShowModal(false); // Close the modal explicitly
-          router.replace('./');
-        }, 3000);
       } else {
         const message = response.data?.message || 'Failed to process your order';
         Alert.alert('Order Failed', message);
         setShowModal(false);
       }
     } catch (err) {
-      // Try to surface meaningful server error messages when available
       const serverMessage = err?.response?.data?.message || err?.response?.data || err?.message;
       Alert.alert('Order Error', serverMessage || 'Could not connect to server. Please try again.');
       setShowModal(false);
@@ -178,6 +175,13 @@ const Checkout = () => {
   const closeCheckoutModal = () => {
     setShowModal(false);
     setPaymentSuccess(false); // Reset payment success state
+  };
+
+  // Handler when user confirms they have completed the M-Pesa payment.
+  const handleUserConfirmedPayment = () => {
+    setPaymentSuccess(false);
+    setShowModal(false);
+    router.replace('./Package');
   };
 
   return (
@@ -240,11 +244,11 @@ const Checkout = () => {
       )}
 
       {/* Checkout Modal */}
-      <Modal 
-        visible={showModal} 
-        animationType="slide" 
-        transparent 
-        onRequestClose={closeCheckoutModal}  // Add this to handle back button on Android
+      <Modal
+        visible={showModal}
+        animationType="slide"
+        transparent
+        onRequestClose={closeCheckoutModal}
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
@@ -253,12 +257,18 @@ const Checkout = () => {
             </TouchableOpacity>
 
             {paymentSuccess ? (
+              // --- Simplified: short and direct instructions ---
               <View style={styles.successContainer}>
-                <FontAwesome name="check-circle" size={60} color="green" />
-                <Text style={styles.successText}>Payment Successful!</Text>
-                <Text style={styles.successSubText}>Your order has been placed</Text>
+                <FontAwesome name="info-circle" size={56} color="#1976d2" />
+                <Text style={styles.successTitle}>Finish payment via M-Pesa</Text>
+                <View style={styles.btnRow}>
+                  <TouchableOpacity style={styles.secondaryButton} onPress={closeCheckoutModal}>
+                    <Text style={styles.secondaryButtonText}>Close</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
             ) : (
+              // --- unchanged checkout form / summary ---
               <ScrollView style={styles.modalScroll}>
                 <Text style={styles.modalTitle}>Checkout</Text>
 
@@ -430,9 +440,18 @@ const styles = StyleSheet.create({
   payButtonText: { color: 'white', fontSize: 16, fontWeight: 'bold' },
   backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', alignItems: 'center' },
   backdropText: { color: 'white', marginTop: 10 },
-  successContainer: { alignItems: 'center', padding: 20 },
-  successText: { fontSize: 24, fontWeight: 'bold', color: 'green', marginTop: 20 },
-  successSubText: { fontSize: 16, textAlign: 'center', marginTop: 10 },
+
+  // --- simplified success modal styles ---
+  successContainer: { alignItems: 'center', padding: 10 },
+  successTitle: { fontSize: 18, fontWeight: '700', color: '#222', marginTop: 12, textAlign: 'center' },
+  simpleLine: { marginTop: 8, fontSize: 15, color: '#333', textAlign: 'center' },
+
+  btnRow: { flexDirection: 'row', marginTop: 16, justifyContent: 'center', gap: 12 },
+  confirmButton: { backgroundColor: '#1976d2', paddingHorizontal: 18, paddingVertical: 12, borderRadius: 8, marginRight: 8 },
+  confirmButtonText: { color: '#fff', fontWeight: '700' },
+  secondaryButton: { backgroundColor: '#eee', paddingHorizontal: 18, paddingVertical: 12, borderRadius: 8 },
+  secondaryButtonText: { color: '#333' },
+
   bottomNavigation: { flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center', height: 50, borderTopWidth: 1, borderTopColor: '#ccc', backgroundColor: '#FFF8E1' },
   navItem: { alignItems: 'center' },
 });

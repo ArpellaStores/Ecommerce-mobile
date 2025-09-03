@@ -64,7 +64,8 @@ const ensureImageCached = async (uri) => {
     await FileSystem.makeDirectoryAsync(dir, { intermediates: true }).catch(() => {});
     // download
     const res = await FileSystem.downloadAsync(uri, path);
-    if (res && res.status === 200) {
+    if (res && (res.status === 200 || res.status === undefined)) {
+      // Note: on some platforms downloadAsync returns an object without `status`, treat as success.
       return path;
     }
     // fallback: remove file if bad
@@ -79,9 +80,13 @@ const ensureImageCached = async (uri) => {
 /**
  * ProductImage component
  * - Reads imageUrl from normalized store (productsById) if available
- * - Dispatches fetchProductImage once if needed
+ * - Dispatches fetchProductImage once if needed (guarded)
  * - Caches downloaded images via expo-file-system
  * - Shows spinner while loading and delays "No image" fallback to avoid flicker
+ *
+ * Fixes applied:
+ * - useSelector only selects by stable productId (no returning prop object)
+ * - guarded dispatch to avoid loops
  */
 const ProductImage = ({ product, style, resizeMode = 'cover' }) => {
   const dispatch = useDispatch();
@@ -89,15 +94,17 @@ const ProductImage = ({ product, style, resizeMode = 'cover' }) => {
   const prefetched = useRef(new Set());
   const noImageTimer = useRef(null);
 
-  // prefer normalized product (productsById) so imageUrl updates immediately
-  const storeProduct = useSelector(state => {
-    const fromStore = state.products.productsById?.[product?.id];
-    return fromStore ? fromStore : product || {};
-  });
+  // compute stable productId once
+  const productId = product?.id ?? product?._id ?? product?.productId ?? product?.sku ?? null;
 
-  const isImageLoading = useSelector(state => state.products.imageLoadingStates[product?.id] || false);
+  // select product from normalized store by id (do NOT return prop object)
+  const storeProduct = useSelector((state) => (productId ? state.products?.productsById?.[productId] : undefined));
 
-  const uri = storeProduct?.imageUrl;
+  // select image loading state by productId
+  const isImageLoading = useSelector((state) => (productId ? state.products?.imageLoadingStates?.[productId] || false : false));
+
+  // resolved uri either from storeProduct or from direct prop (but NOT used as selector input)
+  const uri = storeProduct?.imageUrl ?? product?.imageUrl ?? product?.image ?? null;
 
   // local UI state for caching/rendering
   const [showSpinner, setShowSpinner] = useState(false);
@@ -105,14 +112,20 @@ const ProductImage = ({ product, style, resizeMode = 'cover' }) => {
   const [loadError, setLoadError] = useState(false);
   const [cachedUri, setCachedUri] = useState(null);
 
-  // Dispatch image fetch (web logic) once per card
+  // Dispatch image fetch only if we have a productId and image is not present and not already loading
   useEffect(() => {
-    if (!storeProduct?.id || fetchAttempted.current) return;
-    if (!storeProduct.imageUrl && !isImageLoading) {
+    if (!productId) return;
+    if (storeProduct == null && !isImageLoading && !fetchAttempted.current) {
+      // attempt fetch once
       fetchAttempted.current = true;
-      dispatch(fetchProductImage(storeProduct.id));
+      dispatch(fetchProductImage(productId));
+    } else if (storeProduct && !storeProduct.imageUrl && !isImageLoading && !fetchAttempted.current) {
+      // storeProduct exists but imageUrl missing -> fetch once
+      fetchAttempted.current = true;
+      dispatch(fetchProductImage(productId));
     }
-  }, [storeProduct?.id, storeProduct?.imageUrl, isImageLoading, dispatch]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [productId, storeProduct?.imageUrl, isImageLoading, dispatch]);
 
   // manage spinner/no-image timing to prevent flicker
   useEffect(() => {
@@ -195,7 +208,7 @@ const ProductImage = ({ product, style, resizeMode = 'cover' }) => {
   };
 
   const onLoadEnd = () => {
-    // image loaded — we don't need to do anything special
+    // image loaded — nothing to do
   };
 
   // render priority:
@@ -210,7 +223,7 @@ const ProductImage = ({ product, style, resizeMode = 'cover' }) => {
   }
 
   // 2) render cached local file if available, else remote uri if present and not errored
-  const displayUri = (cachedUri && `file://${cachedUri}`) || uri;
+  const displayUri = (cachedUri && (cachedUri.startsWith('file://') ? cachedUri : `file://${cachedUri}`)) || uri;
   if (displayUri && !loadError) {
     return (
       <Image
@@ -252,6 +265,19 @@ const Home = () => {
     hasMore,
     pageFetchStatus = {},
   } = useSelector((s) => s.products || {});
+
+  // --- cart badge: compute total quantity robustly (handles array or keyed object)
+  const cartCount = useSelector((s) => {
+    const cart = s.cart || {};
+    const itemsCandidate = cart.items ?? cart.cartItems ?? [];
+    if (Array.isArray(itemsCandidate)) {
+      return itemsCandidate.reduce((sum, it) => sum + (Number(it?.quantity) || 0), 0);
+    }
+    if (itemsCandidate && typeof itemsCandidate === 'object') {
+      return Object.values(itemsCandidate).reduce((sum, it) => sum + (Number(it?.quantity) || 0), 0);
+    }
+    return 0;
+  });
 
   const [searchTerm, setSearchTerm] = useState('');
   const [currentCategory, setCurrentCategory] = useState({ id: 'All', name: 'All', subcategories: [] });
@@ -499,8 +525,15 @@ const Home = () => {
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.title}>Arpella Stores</Text>
-        <TouchableOpacity onPress={() => router.push('./cart')}>
-          <FontAwesome name="shopping-cart" size={24} />
+        <TouchableOpacity onPress={() => router.push('./cart')} accessibilityRole="button" accessibilityLabel="Open cart">
+          <View style={{ width: 36, height: 36, justifyContent: 'center', alignItems: 'center' }}>
+            <FontAwesome name="shopping-cart" size={24} />
+            {cartCount > 0 && (
+              <View style={styles.cartBadge} pointerEvents="none" accessibilityLabel={`Cart items: ${cartCount}`}>
+                <Text style={styles.cartBadgeText}>{cartCount > 99 ? '99+' : cartCount}</Text>
+              </View>
+            )}
+          </View>
         </TouchableOpacity>
       </View>
 
@@ -701,7 +734,7 @@ const Home = () => {
   );
 };
 
-// --- styles preserved except price changes + image height tweak ---
+// --- styles preserved except price changes + image height tweak + cart badge ---
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#FFF8E1', paddingHorizontal: 15, paddingTop: 30 },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 13 },
@@ -787,6 +820,26 @@ const styles = StyleSheet.create({
   addButtonText: { fontSize: 16, fontWeight: 'bold', color: '#fff' },
   navbar: { flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center', height: 50, borderTopWidth: 1, borderTopColor: '#ccc', backgroundColor: '#FFF8E1' },
   navItem: { alignItems: 'center' },
+
+  // cart badge styles (new)
+  cartBadge: {
+    position: 'absolute',
+    right: -6,
+    top: -6,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: '#d32f2f',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 4,
+    elevation: 4,
+  },
+  cartBadgeText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '700',
+  },
 });
 
 export default Home;
