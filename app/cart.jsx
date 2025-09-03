@@ -1,4 +1,3 @@
-
 // screens/Checkout.js
 
 import React, { useState, useEffect } from 'react';
@@ -20,12 +19,13 @@ import { clearCart } from '../redux/slices/cartSlice';
 import FontAwesome from 'react-native-vector-icons/FontAwesome';
 import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
+import axios from 'axios';
 import { baseUrl } from '../constants/const.js';
 
 /**
  * Checkout Screen
  * - Displays cart summary and total
- * - Opens a checkout modal to collect M‑Pesa number, location, and ID/passport
+ * - Opens a checkout modal to collect M-Pesa number, location, and ID/passport
  * - Submits order to backend and handles success/failure
  */
 const Checkout = () => {
@@ -66,12 +66,16 @@ const Checkout = () => {
         return;
       }
       const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-      setLocation({
+      const coords = {
         latitude: loc.coords.latitude,
         longitude: loc.coords.longitude,
-      });
-    } catch {
+      };
+      setLocation(coords);
+      return coords;
+    } catch (e) {
+      // keep UI friendly and return null to allow fallback
       Alert.alert('Location Error', 'Unable to get your current location. Try again.');
+      return null;
     } finally {
       setLocationLoading(false);
     }
@@ -98,58 +102,67 @@ const Checkout = () => {
   /** Submit the order **/
   const submitOrder = async () => {
     if (!mpesaNumber) {
-      Alert.alert('Missing Information', 'M‑Pesa payment number is required');
+      Alert.alert('Missing Information', 'M-Pesa payment number is required');
       return;
     }
-    if (!location) {
-      Alert.alert('Location Required', 'Please set your delivery location');
-      return;
-    }
+
     const orderItems = getOrderItems();
     if (orderItems.length === 0) {
       Alert.alert('Empty Cart', 'Your cart is empty');
       return;
     }
 
-    const orderData = {
-      userId: userPhone,
-      mpesaNumber,
-      buyerPin: buyerPin || 'N/A',
-      latitude: location.latitude,
-      longitude: location.longitude,
-      orderItems,
-    };
-
     setLoading(true);
+
     try {
-      const response = await fetch(`${baseUrl}/order`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(orderData),
-      });
-      const text = await response.text();
-      let data;
-      try {
-        data = JSON.parse(text);
-      } catch {
-        data = { message: 'Invalid server response' };
+      // Resolve coordinates: prefer user-granted location, otherwise try to fetch,
+      // otherwise fall back to Nairobi CBD coordinates (same behavior as web fallback).
+      let coords = location;
+      if (!coords) {
+        try {
+          const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced, maximumAge: 10000, timeout: 5000 });
+          coords = { latitude: loc.coords.latitude, longitude: loc.coords.longitude };
+        } catch {
+          // fallback to Nairobi CBD
+          coords = { latitude: -1.28333, longitude: 36.81667 };
+        }
       }
 
-      if (response.ok) {
+      const payload = {
+        userId: userPhone,
+        phoneNumber: mpesaNumber,
+        orderPaymentType: 'Mpesa',
+        buyerPin: buyerPin || 'N/A',
+        latitude: coords.latitude,
+        longitude: coords.longitude,
+        orderItems,
+      };
+
+      // Use axios (same as web) to send JSON and get a consistent response shape.
+      const response = await axios.post(`${baseUrl}/order`, payload, {
+        headers: { 'Content-Type': 'application/json' },
+        timeout: 20000,
+      });
+
+      // axios already parses JSON into response.data
+      if (response.status >= 200 && response.status < 300) {
         setPaymentSuccess(true);
         dispatch(clearCart());
         setTimeout(() => {
           setPaymentSuccess(false);
-          setShowModal(false);  // Close the modal explicitly
-          router.replace('/home');
+          setShowModal(false); // Close the modal explicitly
+          router.replace('./');
         }, 3000);
       } else {
-        Alert.alert('Order Failed', data.message || 'Failed to process your order');
-        setShowModal(false);  // Close the modal on failure
+        const message = response.data?.message || 'Failed to process your order';
+        Alert.alert('Order Failed', message);
+        setShowModal(false);
       }
-    } catch {
-      Alert.alert('Connection Error', 'Could not connect to server. Please try again.');
-      setShowModal(false);  // Close the modal on connection error
+    } catch (err) {
+      // Try to surface meaningful server error messages when available
+      const serverMessage = err?.response?.data?.message || err?.response?.data || err?.message;
+      Alert.alert('Order Error', serverMessage || 'Could not connect to server. Please try again.');
+      setShowModal(false);
     } finally {
       setLoading(false);
     }
@@ -164,7 +177,7 @@ const Checkout = () => {
   /** Close the checkout modal **/
   const closeCheckoutModal = () => {
     setShowModal(false);
-    setPaymentSuccess(false);  // Reset payment success state
+    setPaymentSuccess(false); // Reset payment success state
   };
 
   return (
@@ -289,7 +302,7 @@ const Checkout = () => {
                 </View>
 
                 {/* Payment Form */}
-                <Text style={styles.inputLabel}>M‑Pesa Payment Number</Text>
+                <Text style={styles.inputLabel}>M-Pesa Payment Number</Text>
                 <TextInput
                   style={styles.input}
                   placeholder="e.g., 0712345678"
