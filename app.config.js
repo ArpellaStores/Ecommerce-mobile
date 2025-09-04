@@ -23,6 +23,8 @@ export default ({ config }) => ({
     android: {
       package: "com.mgachanja.arpella",
       versionCode: 2,
+      hermesEnabled: false,
+
       adaptiveIcon: {
         foregroundImage: "./assets/images/logo.jpeg",
         backgroundColor: "#ffffff"
