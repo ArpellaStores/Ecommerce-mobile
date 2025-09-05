@@ -33,12 +33,24 @@ const Login = () => {
   const toast = useToast();
   const { isAuthenticated, isLoading, error: authError } = useSelector((s) => s.auth);
 
-  const { control, handleSubmit, setValue, formState: { errors } } = useForm();
+  // default phone set to 254 per requirement
+  const { control, handleSubmit, setValue, formState: { errors } } = useForm({
+    defaultValues: { phone: '254' },
+  });
+
   const [passwordVisible, setPasswordVisible] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [autoLoginAttempted, setAutoLoginAttempted] = useState(false);
   const [manualLoginPressed, setManualLoginPressed] = useState(false);
+
+  // Password validator: at least one uppercase, one lowercase, one digit, one special char, min 8 chars
+  const validatePassword = (value) => {
+    if (!value) return 'Password required';
+    const pattern = /^(?=.*[A-Z])(?=.*[a-z])(?=.*\d)(?=.*[^\w\s]).{8,}$/;
+    return pattern.test(value)
+      || 'Password must include uppercase, lowercase, number, special char (e.g., .,@,#), and be ≥8 chars';
+  };
 
   /** Load saved credentials & remember flag on mount **/
   useEffect(() => {
@@ -46,7 +58,13 @@ const Login = () => {
       try {
         const { phone, pass, rememberMe: rem } = await loadCredentials();
         if (rem && phone) {
-          setValue('phone', phone);
+          // if a phone exists but doesn't start with 254, normalize it to start with 254
+          const normalized = (phone || '').replace(/\D/g, '');
+          if (normalized && !normalized.startsWith('254')) {
+            setValue('phone', '254' + normalized.replace(/^0+/, ''));
+          } else if (normalized) {
+            setValue('phone', normalized);
+          }
           setRememberMe(true);
         }
         if (rem && pass) {
@@ -77,6 +95,7 @@ const Login = () => {
             token: result.payload,
             phone: data.phone,
             pass: data.password,
+            rememberMe,
           });
         } else {
           await clearCredentials();
@@ -105,7 +124,7 @@ const Login = () => {
     }
   }, [isAuthenticated, router]);
 
-  /** Auto‑login effect: only if rememberMe flag is true **/
+  /** Auto-login effect: only if rememberMe flag is true **/
   useEffect(() => {
     const performAutoLogin = async () => {
       if (autoLoginAttempted || isAuthenticated || manualLoginPressed) return;
@@ -125,7 +144,7 @@ const Login = () => {
         );
 
         if (loginUser.fulfilled.match(result)) {
-          toast.show('Auto‑login successful!', { type: 'success' });
+          toast.show('Auto-login successful!', { type: 'success' });
         } else {
           const msg =
             result.payload?.message ||
@@ -172,29 +191,46 @@ const Login = () => {
           name="phone"
           rules={{
             required: 'Phone required',
-            pattern: { value: /^[0-9]{8,12}$/, message: '9–13 digits' },
+            pattern: {
+              // enforce 254 + 9 digits
+              value: /^254\d{9}$/,
+              message: 'Phone must start with 254 followed by 9 digits (e.g., 254712345678)',
+            },
           }}
-          render={({ field: { onChange, onBlur, value }, fieldState: { error } }) => (
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Phone Number</Text>
-              <TextInput
-                style={[styles.input, error && styles.inputError]}
-                placeholder="0712345678"
-                keyboardType="numeric"
-                onBlur={onBlur}
-                onChangeText={onChange}
-                value={value}
-              />
-              {error && <Text style={styles.errorText}>{error.message}</Text>}
-            </View>
-          )}
+          render={({ field: { onChange, onBlur, value }, fieldState: { error } }) => {
+            const handlePhoneChange = (text) => {
+              // strip non-digits
+              let cleaned = (text || '').replace(/\D/g, '');
+              // ensure it starts with 254
+              if (!cleaned.startsWith('254')) {
+                cleaned = '254' + cleaned.replace(/^254/, '').replace(/^0+/, '');
+              }
+              onChange(cleaned);
+            };
+
+            return (
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Phone Number</Text>
+                <TextInput
+                  style={[styles.input, error && styles.inputError]}
+                  placeholder="254712345678"
+                  keyboardType="numeric"
+                  onBlur={onBlur}
+                  onChangeText={handlePhoneChange}
+                  value={value || '254'}
+                  maxLength={12}
+                />
+                {error && <Text style={styles.errorText}>{error.message}</Text>}
+              </View>
+            );
+          }}
         />
 
         {/* Password */}
         <Controller
           control={control}
           name="password"
-          rules={{ required: 'Password required' }}
+          rules={{ validate: validatePassword }}
           render={({ field: { onChange, onBlur, value }, fieldState: { error } }) => (
             <View style={styles.inputGroup}>
               <Text style={styles.inputLabel}>Password</Text>
@@ -406,6 +442,11 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     borderRadius: 8,
     justifyContent: 'center',
+  },
+  errorText: {
+    color: 'red',
+    marginTop: 6,
+    fontSize: 13,
   },
 });
 

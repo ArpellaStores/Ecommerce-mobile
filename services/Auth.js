@@ -5,12 +5,6 @@ import { Platform, BackHandler, Alert } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 import { baseUrl } from '@/constants/const';
 
-// Debug the baseUrl to see if that's the issue
-console.log('API Base URL:', baseUrl);
-
-/**
- * Custom axios configuration with fallbacks for iOS
- */
 const createApiClient = (customConfig = {}) => {
   return axios.create({
     baseURL: baseUrl,

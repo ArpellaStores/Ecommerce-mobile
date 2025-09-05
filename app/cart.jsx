@@ -41,7 +41,10 @@ const Checkout = () => {
   const [loading, setLoading] = useState(false);
   const [locationLoading, setLocationLoading] = useState(false);
   const [showModal, setShowModal] = useState(false);
-  const [mpesaNumber, setMpesaNumber] = useState(userPhone || '');
+
+  // Default mpesaNumber seeded from userPhone if present
+  const [mpesaNumber, setMpesaNumber] = useState(userPhone || '254');
+  const [mpesaError, setMpesaError] = useState('');
   const [buyerPin, setBuyerPin] = useState('');
   const [location, setLocation] = useState(null);
   const [paymentSuccess, setPaymentSuccess] = useState(false);
@@ -101,10 +104,77 @@ const Checkout = () => {
       return sum + (p.price || 0) * item.quantity;
     }, 0);
 
+  // --- M-Pesa number normalization & validation helpers ---
+
+  /**
+   * Normalize input:
+   * - strip spaces, plus sign, and non-digits
+   * - if user types a local number starting with 0 (eg 0712...), convert to 254712...
+   * - if user types number without 254, we prepend 254
+   * Returns normalized digits-only string.
+   */
+  const normalizeMpesaInput = (raw) => {
+    if (!raw) return '';
+    // Remove non-digits (this strips + and spaces)
+    let digits = raw.replace(/\D/g, '');
+
+    // If user typed local number starting with 0 (e.g., 0712...), convert to 254712...
+    if (digits.startsWith('0')) {
+      digits = '254' + digits.slice(1);
+    }
+
+    // If user typed number without country code but not starting with 0 (e.g., 712...), prepend 254
+    if (!digits.startsWith('254')) {
+      // But avoid duplicating if they already typed something like '254...'
+      digits = '254' + digits;
+    }
+
+    // Cap to 12 digits (254 + 9 digits local)
+    if (digits.length > 12) digits = digits.slice(0, 12);
+
+    return digits;
+  };
+
+  /**
+   * Quick validation:
+   * - Must be exactly 12 digits long
+   * - Must start with 2547 (Safaricom mobile numbers follow 07 -> 2547)
+   * - (Note: mobile number portability exists; this check validates the common Safaricom format)
+   */
+  const isValidSafaricomMpesa = (normalized) => {
+    if (!normalized) return false;
+    // 254 + 9 digits => total 12 digits
+    const re = /^2547\d{8}$/;
+    return re.test(normalized);
+  };
+
+  // Handler for changes from the text input
+  const handleMpesaChange = (text) => {
+    const normalized = normalizeMpesaInput(text);
+    setMpesaNumber(normalized);
+
+    // Validate and set inline error message
+    if (!normalized || normalized.length < 12) {
+      setMpesaError('Enter M-Pesa number in format 254XXXXXXXX (no +).');
+      return;
+    }
+    if (!isValidSafaricomMpesa(normalized)) {
+      setMpesaError('Number must be a Safaricom mobile (starts with 254) and 12 digits long and dont include "+"+.');
+      return;
+    }
+    setMpesaError('');
+  };
+
   /** Submit the order **/
   const submitOrder = async () => {
+    // Final validation before submit
     if (!mpesaNumber) {
       Alert.alert('Missing Information', 'M-Pesa payment number is required');
+      return;
+    }
+
+    if (!isValidSafaricomMpesa(mpesaNumber)) {
+      Alert.alert('Invalid M-Pesa Number', 'Enter a valid Safaricom M-Pesa number in format 2547XXXXXXXX (no +)');
       return;
     }
 
@@ -169,6 +239,14 @@ const Checkout = () => {
   const openCheckoutModal = () => {
     setShowModal(true);
     if (!location) getCurrentLocation();
+    // ensure mpesaNumber is normalized when opening modal
+    setMpesaNumber(normalizeMpesaInput(mpesaNumber));
+    // validate seed value
+    if (!isValidSafaricomMpesa(normalizeMpesaInput(mpesaNumber))) {
+      setMpesaError('Enter M-Pesa number in format 2547XXXXXXXX (no +).');
+    } else {
+      setMpesaError('');
+    }
   };
 
   /** Close the checkout modal **/
@@ -314,12 +392,14 @@ const Checkout = () => {
                 {/* Payment Form */}
                 <Text style={styles.inputLabel}>M-Pesa Payment Number</Text>
                 <TextInput
-                  style={styles.input}
+                  style={[styles.input, mpesaError ? { borderColor: 'red' } : null]}
                   placeholder="e.g., 254712345678"
                   value={mpesaNumber}
-                  onChangeText={setMpesaNumber}
+                  onChangeText={handleMpesaChange}
                   keyboardType="phone-pad"
+                  maxLength={12}
                 />
+                {mpesaError ? <Text style={styles.errorText}>{mpesaError}</Text> : null}
 
                 <Text style={styles.inputLabel}>ID/Passport Number (optional)</Text>
                 <TextInput
@@ -353,9 +433,9 @@ const Checkout = () => {
                 </View>
 
                 <TouchableOpacity
-                  style={styles.payButton}
+                  style={[styles.payButton, (loading || mpesaError) && { opacity: 0.6 }]}
                   onPress={submitOrder}
-                  disabled={loading}
+                  disabled={loading || !!mpesaError}
                 >
                   {loading ? (
                     <ActivityIndicator size="small" color="#fff" />
@@ -454,6 +534,9 @@ const styles = StyleSheet.create({
 
   bottomNavigation: { flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center', height: 50, borderTopWidth: 1, borderTopColor: '#ccc', backgroundColor: '#FFF8E1' },
   navItem: { alignItems: 'center' },
+
+  // new inline error
+  errorText: { color: 'red', marginTop: 6, fontSize: 13 },
 });
 
 export default Checkout;

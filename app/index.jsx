@@ -1,5 +1,3 @@
-// screens/Register.js
-
 import React, { useEffect, useState } from 'react';
 import {
   View,
@@ -38,7 +36,10 @@ const index = () => {
   const dispatch = useDispatch();
   const { isAuthenticated, loading: reduxLoading } = useSelector((s) => s.auth);
 
-  const { control, handleSubmit, formState: { errors }, reset } = useForm();
+  // default phone set to 254 per requirement
+  const { control, handleSubmit, formState: { errors }, reset } = useForm({
+    defaultValues: { phone: '254' },
+  });
   const [showPassword, setShowPassword] = useState(false);
   const [localLoading, setLocalLoading] = useState(false);
 
@@ -60,10 +61,12 @@ const index = () => {
   }, [isAuthenticated, router]);
 
   // Password strength validator
+  // Requires: at least one uppercase, one lowercase, one digit, one symbol (dot allowed), min 8 chars
   const validatePassword = (value) => {
-    const pattern = /^(?=.*[A-Z])(?=.*[a-z])(?=.*\d)(?=.*[@$!%*?&#^_+=<>?,./|~]).{8,}$/;
+    if (!value) return 'Password is required';
+    const pattern = /^(?=.*[A-Z])(?=.*[a-z])(?=.*\d)(?=.*[^\w\s]).{8,}$/;
     return pattern.test(value)
-      || 'Password must include uppercase, lowercase, number, special char, and be ≥8 chars';
+      || 'Password must include uppercase, lowercase, number, special char (e.g., .,@,#), and be ≥8 chars';
   };
 
   // Initial form submission triggers agreement modal
@@ -203,17 +206,39 @@ const index = () => {
               <Controller
                 control={control}
                 name="phone"
-                rules={{ required: 'Phone Number is required' }}
-                render={({ field: { onChange, value } }) => (
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Phone Number"
-                    keyboardType="phone-pad"
-                    value={value || ''}
-                    onChangeText={onChange}
-                    editable={!combinedLoading}
-                  />
-                )}
+                rules={{
+                  required: 'Phone Number is required',
+                  pattern: {
+                    // Enforce leading 254 and exactly 9 digits after it (total 12 digits)
+                    value: /^254\d{9}$/,
+                    message: 'Phone must start with 254 followed by 9 digits (e.g., 254712345678)',
+                  },
+                }}
+                render={({ field: { onChange, value } }) => {
+                  // always keep only digits and enforce 254 prefix
+                  const handlePhoneChange = (text) => {
+                    // remove non-digits
+                    let cleaned = (text || '').replace(/\D/g, '');
+                    // if user removed the prefix, re-insert it
+                    if (!cleaned.startsWith('254')) {
+                      // remove any leading zeros that might cause duplication then prefix 254
+                      cleaned = '254' + cleaned.replace(/^254/, '').replace(/^0+/, '');
+                    }
+                    onChange(cleaned);
+                  };
+
+                  return (
+                    <TextInput
+                      style={styles.input}
+                      placeholder="254712345678"
+                      keyboardType="phone-pad"
+                      value={value || '254'}
+                      onChangeText={handlePhoneChange}
+                      editable={!combinedLoading}
+                      maxLength={12}
+                    />
+                  );
+                }}
               />
               {errors.phone && <Text style={styles.error}>{errors.phone.message}</Text>}
             </View>
