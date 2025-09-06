@@ -143,7 +143,7 @@ const Checkout = () => {
    */
   const isValidSafaricomMpesa = (normalized) => {
     if (!normalized) return false;
-    const re = /^2547\d{8}$/;
+    const re = /^254\d{9}$/;
     return re.test(normalized);
   };
 
