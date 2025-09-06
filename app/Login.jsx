@@ -1,4 +1,4 @@
-// screens/Login.js
+// screens/Login.jsx
 
 import React, { useEffect, useState } from 'react';
 import {
@@ -539,3 +539,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
 });
+
+// CRITICAL: Default export is required
+export default Login;
