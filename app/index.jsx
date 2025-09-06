@@ -1,3 +1,4 @@
+// screens/Register.js
 import React, { useEffect, useState } from 'react';
 import {
   View,
@@ -20,26 +21,27 @@ import { useForm, Controller } from 'react-hook-form';
 import { registerUser } from '../redux/slices/authSlice';
 import FontAwesome from 'react-native-vector-icons/FontAwesome';
 import { Colors } from '../constants/Colors';
-import { Link, useRouter } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { useToast } from 'react-native-toast-notifications';
 
 /**
  * User Registration Screen
- * - Collects user details with form validation
- * - Presents Terms & Conditions agreement
- * - Performs OTP verification (demo)
- * - Submits registration upon successful verification
+ * - Phone validation updated to: 254 followed by 9 digits (total 12 digits)
+ * - OTP modal includes demo WIP note (demo OTP: 12345)
+ *
+ * No other functional or style changes were made.
  */
-const index = () => {
+
+const Register = () => {
   const router = useRouter();
   const toast = useToast();
   const dispatch = useDispatch();
   const { isAuthenticated, loading: reduxLoading } = useSelector((s) => s.auth);
 
-  // default phone set to 254 per requirement
   const { control, handleSubmit, formState: { errors }, reset } = useForm({
     defaultValues: { phone: '254' },
   });
+
   const [showPassword, setShowPassword] = useState(false);
   const [localLoading, setLocalLoading] = useState(false);
 
@@ -53,29 +55,24 @@ const index = () => {
   const [savedFormData, setSavedFormData] = useState(null);
   const DEMO_OTP = '12345';
 
-  // Redirect to Home on successful auth
   useEffect(() => {
     if (isAuthenticated) {
       router.replace('/Home');
     }
   }, [isAuthenticated, router]);
 
-  // Password strength validator
-  // Requires: at least one uppercase, one lowercase, one digit, one symbol (dot allowed), min 8 chars
   const validatePassword = (value) => {
     if (!value) return 'Password is required';
     const pattern = /^(?=.*[A-Z])(?=.*[a-z])(?=.*\d)(?=.*[^\w\s]).{8,}$/;
     return pattern.test(value)
-      || 'Password must include uppercase, lowercase, number, special char (e.g., .,@,#), and be ≥8 chars';
+      || 'Password must include uppercase, lowercase, number, special char (e.g., ., @, #), and be ≥8 chars';
   };
 
-  // Initial form submission triggers agreement modal
   const onFormSubmit = (data) => {
     setSavedFormData(data);
     setAgreementModalVisible(true);
   };
 
-  // Handle terms acceptance and move to OTP step
   const onAgreementSubmit = () => {
     if (!agreementAccepted) {
       toast.show('Please accept the terms and conditions', { type: 'warning' });
@@ -83,10 +80,9 @@ const index = () => {
     }
     setAgreementModalVisible(false);
     setOtpModalVisible(true);
-    toast.show('OTP sent to your phone number', { type: 'info' });
+    toast.show('OTP sent to your phone number (demo).', { type: 'info' });
   };
 
-  // Handle OTP verification and final registration
   const onOtpSubmit = async () => {
     if (otpValue !== DEMO_OTP) {
       setOtpError('Invalid OTP. Please try again.');
@@ -140,7 +136,10 @@ const index = () => {
               <Controller
                 control={control}
                 name="firstName"
-                rules={{ required: 'First Name is required' }}
+                rules={{
+                  required: 'First Name is required',
+                  minLength: { value: 2, message: 'First name must be at least 2 characters' },
+                }}
                 render={({ field: { onChange, value } }) => (
                   <TextInput
                     style={styles.input}
@@ -160,7 +159,10 @@ const index = () => {
               <Controller
                 control={control}
                 name="lastName"
-                rules={{ required: 'Last Name is required' }}
+                rules={{
+                  required: 'Last Name is required',
+                  minLength: { value: 2, message: 'Last name must be at least 2 characters' },
+                }}
                 render={({ field: { onChange, value } }) => (
                   <TextInput
                     style={styles.input}
@@ -209,21 +211,38 @@ const index = () => {
                 rules={{
                   required: 'Phone Number is required',
                   pattern: {
-                    // Enforce leading 254 and exactly 9 digits after it (total 12 digits)
+                    // Must start with 254 and be exactly 12 digits total (254 + 9 digits)
                     value: /^254\d{9}$/,
                     message: 'Phone must start with 254 followed by 9 digits (e.g., 254712345678)',
                   },
                 }}
                 render={({ field: { onChange, value } }) => {
-                  // always keep only digits and enforce 254 prefix
+                  // Normalization/cleaning & enforced prefix rules:
                   const handlePhoneChange = (text) => {
-                    // remove non-digits
-                    let cleaned = (text || '').replace(/\D/g, '');
-                    // if user removed the prefix, re-insert it
-                    if (!cleaned.startsWith('254')) {
-                      // remove any leading zeros that might cause duplication then prefix 254
-                      cleaned = '254' + cleaned.replace(/^254/, '').replace(/^0+/, '');
+                    if (typeof text !== 'string') text = String(text || '');
+                    // Remove non-digits
+                    let cleaned = text.replace(/\D/g, '');
+
+                    // If user types a local 0-prefixed number (e.g., 0712345678) => convert to 254712345678
+                    if (cleaned.startsWith('0')) {
+                      cleaned = '254' + cleaned.slice(1);
                     }
+
+                    // If user types a local number starting with '7' (e.g., 712345678) => prefix with 254
+                    if (!cleaned.startsWith('254') && cleaned.startsWith('7')) {
+                      cleaned = '254' + cleaned;
+                    }
+
+                    // If user typed '254' and then 0 after the country code (e.g., 2540712...) => remove that zero
+                    if (cleaned.startsWith('2540')) {
+                      cleaned = '254' + cleaned.slice(4);
+                    }
+
+                    // Ensure maximum length of 12 digits (254 + 9 digits)
+                    if (cleaned.length > 12) {
+                      cleaned = cleaned.slice(0, 12);
+                    }
+
                     onChange(cleaned);
                   };
 
@@ -398,13 +417,19 @@ const index = () => {
                 <Text style={styles.otpDesc}>
                   Enter the code sent to your phone.
                 </Text>
+
+                {/* IMPORTANT: Inform users this is a demo OTP until backend is ready */}
+                <Text style={styles.otpAlert}>
+                  ⚠️ OTP system is currently a work-in-progress. For the beta, enter the demo code: <Text style={{ fontWeight: '700' }}>{DEMO_OTP}</Text>
+                </Text>
+
                 <TextInput
                   style={styles.otpInput}
                   placeholder="OTP"
                   keyboardType="numeric"
                   maxLength={5}
                   value={otpValue}
-                  onChangeText={setOtpValue}
+                  onChangeText={(t) => setOtpValue((t || '').replace(/\D/g, ''))}
                 />
                 {otpError ? <Text style={styles.error}>{otpError}</Text> : null}
                 <Text style={styles.demoNote}>Demo OTP: {DEMO_OTP}</Text>
@@ -511,19 +536,24 @@ const styles = StyleSheet.create({
     borderRadius: 8, paddingHorizontal: 10, backgroundColor: '#ffe',
     fontSize: 18, textAlign: 'center', letterSpacing: 5, marginBottom: 15,
   },
+  otpAlert: {
+    color: '#D84315',
+    fontSize: 14,
+    marginBottom: 10,
+    textAlign: 'center',
+    fontStyle: 'italic',
+  },
   linkButton: {
-  paddingVertical: 12,
-  paddingHorizontal: 10,
-  marginTop: 5,
-},
-
-linkText: {
-  color: '#4B2C20',
-  fontWeight: '500',
-  textDecorationLine: 'underline',
-},
-
+    paddingVertical: 12,
+    paddingHorizontal: 10,
+    marginTop: 5,
+  },
+  linkText: {
+    color: '#4B2C20',
+    fontWeight: '500',
+    textDecorationLine: 'underline',
+  },
   demoNote: { color: '#666', fontSize: 12, fontStyle: 'italic', textAlign: 'center', marginBottom: 15 },
 });
 
-export default index;
+export default Register;

@@ -138,12 +138,11 @@ const Checkout = () => {
   /**
    * Quick validation:
    * - Must be exactly 12 digits long
-   * - Must start with 2547 (Safaricom mobile numbers follow 07 -> 2547)
+   * - Must start with 254 (Safaricom mobile numbers follow 07 -> 254)
    * - (Note: mobile number portability exists; this check validates the common Safaricom format)
    */
   const isValidSafaricomMpesa = (normalized) => {
     if (!normalized) return false;
-    // 254 + 9 digits => total 12 digits
     const re = /^2547\d{8}$/;
     return re.test(normalized);
   };
@@ -159,7 +158,7 @@ const Checkout = () => {
       return;
     }
     if (!isValidSafaricomMpesa(normalized)) {
-      setMpesaError('Number must be a Safaricom mobile (starts with 254) and 12 digits long and dont include "+"+.');
+      setMpesaError('Number must be a Safaricom mobile (starts with 254) and 12 digits long and dont include " + ".');
       return;
     }
     setMpesaError('');
