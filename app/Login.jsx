@@ -31,7 +31,7 @@ const Login = () => {
   const router = useRouter();
   const dispatch = useDispatch();
   const toast = useToast();
-  const { isAuthenticated, isLoading, error: authError } = useSelector((s) => s.auth);
+  const { isAuthenticated, isLoading } = useSelector((s) => s.auth);
 
   // default phone set to 254 per requirement
   const { control, handleSubmit, setValue, formState: { errors } } = useForm({
@@ -76,6 +76,43 @@ const Login = () => {
     })();
   }, [setValue]);
 
+  /** Helper function to extract user-friendly error messages **/
+  const getErrorMessage = (error) => {
+    // Check for common login error patterns and return user-friendly messages
+    if (!error) return 'Login failed. Please try again.';
+    
+    let message = '';
+    
+    if (typeof error === 'string') {
+      message = error;
+    } else if (error.message) {
+      message = error.message;
+    } else if (error.data && typeof error.data === 'string') {
+      message = error.data;
+    } else if (error.response?.data?.message) {
+      message = error.response.data.message;
+    } else {
+      message = 'Login failed. Please try again.';
+    }
+
+    // Clean up technical error messages for better user experience
+    if (message.includes('Request failed with status code 400')) {
+      return 'Invalid phone number or password. Please check your credentials.';
+    } else if (message.includes('Request failed with status code 401')) {
+      return 'Invalid phone number or password. Please check your credentials.';
+    } else if (message.includes('Request failed with status code 404')) {
+      return 'Account not found. Please check your phone number or register.';
+    } else if (message.includes('Request failed with status code 500')) {
+      return 'Server error. Please try again later.';
+    } else if (message.includes('Network Error')) {
+      return 'Network error. Please check your internet connection.';
+    } else if (message.includes('timeout')) {
+      return 'Connection timeout. Please try again.';
+    }
+    
+    return message;
+  };
+
   /** Manual login **/
   const onSubmit = async (data) => {
     if (isProcessing) return;
@@ -101,16 +138,13 @@ const Login = () => {
           await clearCredentials();
         }
       } else {
-        const msg =
-          result.payload?.message ||
-          result.error?.message ||
-          authError ||
-          'Login failed';
-        toast.show(msg, { type: 'danger' });
+        const errorMessage = getErrorMessage(result.payload || result.error);
+        toast.show(errorMessage, { type: 'danger' });
       }
     } catch (e) {
       console.error('Login error:', e);
-      toast.show(e.message || authError || 'Unexpected error', { type: 'danger' });
+      const errorMessage = getErrorMessage(e);
+      toast.show(errorMessage, { type: 'danger' });
     } finally {
       setIsProcessing(false);
     }
@@ -144,18 +178,21 @@ const Login = () => {
         );
 
         if (loginUser.fulfilled.match(result)) {
-          toast.show('Auto-login successful!', { type: 'success' });
+          toast.show('Welcome back!', { type: 'success' });
         } else {
-          const msg =
-            result.payload?.message ||
-            result.error?.message ||
-            authError ||
-            'Auto-login failed';
-          toast.show(msg, { type: 'danger' });
+          const errorMessage = getErrorMessage(result.payload || result.error);
+          toast.show(errorMessage, { type: 'danger' });
+          // Clear saved credentials if auto-login fails
+          await clearCredentials();
+          setRememberMe(false);
         }
       } catch (e) {
         console.error('Auto-login error:', e);
-        toast.show(e.message || authError || 'Auto-login error', { type: 'danger' });
+        const errorMessage = getErrorMessage(e);
+        toast.show(errorMessage, { type: 'danger' });
+        // Clear saved credentials if auto-login fails
+        await clearCredentials();
+        setRememberMe(false);
       } finally {
         setIsProcessing(false);
       }
@@ -170,7 +207,6 @@ const Login = () => {
     autoLoginAttempted,
     isAuthenticated,
     manualLoginPressed,
-    authError,
     dispatch,
     toast,
   ]);
@@ -219,6 +255,7 @@ const Login = () => {
                   onChangeText={handlePhoneChange}
                   value={value || '254'}
                   maxLength={12}
+                  editable={!isProcessing && !isLoading}
                 />
                 {error && <Text style={styles.errorText}>{error.message}</Text>}
               </View>
@@ -242,10 +279,12 @@ const Login = () => {
                   onBlur={onBlur}
                   onChangeText={onChange}
                   value={value}
+                  editable={!isProcessing && !isLoading}
                 />
                 <TouchableOpacity
                   onPress={() => setPasswordVisible((v) => !v)}
                   style={styles.eyeIcon}
+                  disabled={isProcessing || isLoading}
                 >
                   <FontAwesome
                     name={passwordVisible ? 'eye-slash' : 'eye'}
@@ -263,34 +302,42 @@ const Login = () => {
         <TouchableOpacity
           style={styles.rememberMeContainer}
           onPress={() => setRememberMe((v) => !v)}
+          disabled={isProcessing || isLoading}
         >
           <FontAwesome
             name={rememberMe ? 'check-square' : 'square-o'}
             size={24}
-            color="#4B2C20"
+            color={isProcessing || isLoading ? '#ccc' : '#4B2C20'}
           />
-          <Text style={styles.rememberMeText}> Remember Me</Text>
+          <Text style={[styles.rememberMeText, (isProcessing || isLoading) && styles.disabledText]}>
+            Remember Me
+          </Text>
         </TouchableOpacity>
 
         {/* Submit */}
         <TouchableOpacity
-          style={styles.button}
+          style={[styles.button, (isProcessing || isLoading) && styles.buttonDisabled]}
           onPress={handleSubmit(onSubmit)}
           disabled={isProcessing || isLoading}
         >
-          <Text style={styles.buttonText}>
-            {isProcessing || isLoading ? 'Processing...' : 'Login'}
-          </Text>
+          {(isProcessing || isLoading) ? (
+            <View style={styles.buttonContent}>
+              <ActivityIndicator size="small" color="#FFF" />
+              <Text style={styles.buttonText}>Logging in...</Text>
+            </View>
+          ) : (
+            <Text style={styles.buttonText}>Login</Text>
+          )}
         </TouchableOpacity>
-
-        {/* Auth Error */}
-        {authError ? <Text style={styles.authError}>{authError}</Text> : null}
       </View>
 
+      {/* Loading Overlay */}
       {(isProcessing || isLoading) && (
         <View style={styles.backdrop}>
-          <ActivityIndicator size="large" color="#4B2C20" />
-          <Text style={styles.loadingText}>Loading...</Text>
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color="#4B2C20" />
+            <Text style={styles.loadingText}>Logging you in...</Text>
+          </View>
         </View>
       )}
 
@@ -299,17 +346,24 @@ const Login = () => {
         <TouchableOpacity
           onPress={() => router.replace('/')}
           style={styles.socialButton}
+          disabled={isProcessing || isLoading}
         >
           <FontAwesome name="user" size={20} color="#000" />
-          <Text> Don't have an account? Register</Text>
+          <Text style={styles.socialButtonText}>Don't have an account? Register</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.socialButton}>
+        <TouchableOpacity 
+          style={styles.socialButton}
+          disabled={isProcessing || isLoading}
+        >
           <FontAwesome name="google" size={20} color="#db4437" />
-          <Text> Login with Google</Text>
+          <Text style={styles.socialButtonText}>Login with Google</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.socialButton}>
+        <TouchableOpacity 
+          style={styles.socialButton}
+          disabled={isProcessing || isLoading}
+        >
           <FontAwesome name="facebook" size={20} color="#3b5998" />
-          <Text> Login with Facebook</Text>
+          <Text style={styles.socialButtonText}>Login with Facebook</Text>
         </TouchableOpacity>
       </View>
     </ScrollView>
@@ -345,6 +399,10 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 20,
     elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
   },
   formTitle: {
     fontSize: 20,
@@ -403,6 +461,9 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#4B2C20',
   },
+  disabledText: {
+    color: '#ccc',
+  },
   button: {
     backgroundColor: '#4B2C20',
     paddingVertical: 14,
@@ -410,21 +471,38 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 10,
   },
+  buttonDisabled: {
+    backgroundColor: '#8D6E63',
+    opacity: 0.7,
+  },
+  buttonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
   buttonText: {
     color: '#fff',
     fontSize: 16,
     fontWeight: 'bold',
-  },
-  authError: {
-    color: 'red',
-    textAlign: 'center',
-    marginTop: 8,
+    marginLeft: 8,
   },
   backdrop: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.3)',
+    backgroundColor: 'rgba(0,0,0,0.5)',
     justifyContent: 'center',
     alignItems: 'center',
+    zIndex: 1000,
+  },
+  loadingContainer: {
+    backgroundColor: '#FFF',
+    padding: 20,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
   },
   loadingText: {
     marginTop: 10,
@@ -437,11 +515,23 @@ const styles = StyleSheet.create({
   socialButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#ddd',
-    padding: 10,
+    backgroundColor: '#fff',
+    padding: 12,
     marginBottom: 10,
     borderRadius: 8,
     justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#ddd',
+    elevation: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+  },
+  socialButtonText: {
+    marginLeft: 8,
+    fontSize: 16,
+    color: '#333',
   },
   errorText: {
     color: 'red',
@@ -449,5 +539,3 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
 });
-
-export default Login;

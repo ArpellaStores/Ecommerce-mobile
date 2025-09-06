@@ -28,8 +28,8 @@ import { useToast } from 'react-native-toast-notifications';
  * User Registration Screen
  * - Phone validation updated to: 254 followed by 9 digits (total 12 digits)
  * - OTP modal includes demo WIP note (demo OTP: 12345)
- *
- * No other functional or style changes were made.
+ * - Enhanced error handling to detect duplicate users and redirect to Login
+ * - If server returns DuplicateUserName or similar error, redirect user to Login and notify them
  */
 
 const Register = () => {
@@ -83,6 +83,88 @@ const Register = () => {
     toast.show('OTP sent to your phone number (demo).', { type: 'info' });
   };
 
+  /**
+   * Enhanced helper function to detect duplicate username scenarios
+   * Handles various API response formats
+   */
+  const findDuplicateUsernameItem = (payload) => {
+    if (!payload) return null;
+
+    // Convert payload to string for text-based searching as fallback
+    const payloadString = typeof payload === 'string' ? payload : JSON.stringify(payload);
+    
+    // First, try structured approach
+    const collectArrays = [];
+    
+    // Handle direct array responses
+    if (Array.isArray(payload)) {
+      collectArrays.push(...payload);
+    }
+    
+    // Handle common API error response structures
+    const possibleArrayFields = [
+      'data', 'errors', 'ModelState', 'modelState', 'validationErrors', 
+      'fieldErrors', 'messages', 'details', 'errorDetails'
+    ];
+    
+    for (const field of possibleArrayFields) {
+      if (Array.isArray(payload[field])) {
+        collectArrays.push(...payload[field]);
+      }
+      // Also check nested data objects
+      if (payload.data && Array.isArray(payload.data[field])) {
+        collectArrays.push(...payload.data[field]);
+      }
+    }
+
+    // Check if the payload itself looks like an error object
+    if (payload.code || payload.errorCode || payload.Code) {
+      collectArrays.push(payload);
+    }
+
+    // Inspect collected structured items
+    for (const item of collectArrays) {
+      if (!item) continue;
+      
+      const code = item.code || item.errorCode || item.Code || item.type;
+      const description = item.description || item.message || item.detail || item.error || '';
+      
+      // Check for explicit duplicate username codes
+      if (code && (/duplicateuser/i.test(String(code)) || code === 'DuplicateUserName')) {
+        return { item, description: description || 'User already exists' };
+      }
+      
+      // Check description text for common duplicate user messages
+      if (typeof description === 'string') {
+        const descLower = description.toLowerCase();
+        if (descLower.includes('already taken') || 
+            descLower.includes('already exists') || 
+            descLower.includes('duplicate') ||
+            descLower.includes('user already exists') ||
+            descLower.includes('phone number already')) {
+          return { item, description };
+        }
+      }
+    }
+
+    // Fallback: text-based search in the entire payload
+    if (payloadString) {
+      const lowerPayload = payloadString.toLowerCase();
+      if (lowerPayload.includes('duplicate') || 
+          lowerPayload.includes('already exists') || 
+          lowerPayload.includes('user already exists') ||
+          lowerPayload.includes('phone number already taken') ||
+          lowerPayload.includes('username already')) {
+        return { 
+          item: payload, 
+          description: 'An account with this information already exists' 
+        };
+      }
+    }
+
+    return null;
+  };
+
   const onOtpSubmit = async () => {
     if (otpValue !== DEMO_OTP) {
       setOtpError('Invalid OTP. Please try again.');
@@ -101,12 +183,84 @@ const Register = () => {
     };
 
     try {
-      await dispatch(registerUser(credentials)).unwrap();
+      // Attempt registration
+      const result = await dispatch(registerUser(credentials)).unwrap();
+
+      // Inspect payload for DuplicateUserName-style response
+      const dup = findDuplicateUsernameItem(result);
+      if (dup) {
+        // Inform user and redirect to Login
+        const message = dup.description || "An account with that username already exists. Please login.";
+        toast.show(message, { type: 'warning' });
+        router.replace('/Login');
+        return;
+      }
+
+      // Otherwise proceed as normal success
       toast.show('Registration successful!', { type: 'success' });
       reset();
       router.replace('/Login');
     } catch (err) {
-      toast.show(err.message || 'Registration failed. Please try again.', { type: 'danger' });
+      console.log('Registration error caught:', err);
+      
+      // Enhanced error inspection - check multiple possible locations for duplicate user info
+      const candidatePayloads = [
+        err,                    // The rejectWithValue payload
+        err?.data,             // Direct data from rejectWithValue
+        err?.response,         // Axios response object
+        err?.response?.data,   // Axios response data
+        err?.originalError?.response?.data, // Original axios error response data
+      ];
+
+      let handled = false;
+      
+      // Check for duplicate user in various response formats
+      for (const payload of candidatePayloads) {
+        if (!payload) continue;
+        
+        // Check for explicit duplicate username indicators
+        const dup = findDuplicateUsernameItem(payload);
+        if (dup) {
+          const message = dup.description || "An account with that username already exists. Please login.";
+          toast.show(message, { type: 'warning' });
+          router.replace('/Login');
+          handled = true;
+          break;
+        }
+        
+        // Check for 400 status with common duplicate user messages
+        if (err?.status === 400 || err?.response?.status === 400) {
+          const errorText = JSON.stringify(payload).toLowerCase();
+          if (errorText.includes('duplicate') || 
+              errorText.includes('already exists') || 
+              errorText.includes('user already exists') ||
+              errorText.includes('phone number already') ||
+              errorText.includes('username already')) {
+            toast.show('An account with this phone number already exists. Please login.', { type: 'warning' });
+            router.replace('/Login');
+            handled = true;
+            break;
+          }
+        }
+      }
+
+      if (!handled) {
+        // Fallback for other errors
+        let message = 'Registration failed. Please try again.';
+        
+        // Try to get a more specific error message
+        if (typeof err === 'string') {
+          message = err;
+        } else if (err?.message) {
+          message = err.message;
+        } else if (err?.data && typeof err.data === 'string') {
+          message = err.data;
+        } else if (err?.response?.data?.message) {
+          message = err.response.data.message;
+        }
+        
+        toast.show(message, { type: 'danger' });
+      }
     } finally {
       setLocalLoading(false);
     }

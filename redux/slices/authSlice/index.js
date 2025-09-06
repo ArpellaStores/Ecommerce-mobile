@@ -7,7 +7,7 @@ import { loginUserApi, registerUserApi } from '../../../services/Auth';
  * Async thunk for user login
  * - Calls backend API
  * - On success, returns user data
- * - On failure, rejects with error message
+ * - On failure, rejects with full error object for detailed handling
  */
 export const loginUser = createAsyncThunk(
   'auth/loginUser',
@@ -16,7 +16,15 @@ export const loginUser = createAsyncThunk(
       const response = await loginUserApi(credentials);
       return response;
     } catch (error) {
-      return rejectWithValue(error.message);
+      // Pass the full error object so components can inspect response details
+      return rejectWithValue({
+        message: error.message,
+        response: error.response,
+        data: error.response?.data,
+        status: error.response?.status,
+        // Include the original error for comprehensive inspection
+        originalError: error
+      });
     }
   }
 );
@@ -25,7 +33,7 @@ export const loginUser = createAsyncThunk(
  * Async thunk for user registration
  * - Calls backend API
  * - On success, returns user data
- * - On failure, rejects with error message
+ * - On failure, rejects with full error object for detailed handling
  */
 export const registerUser = createAsyncThunk(
   'auth/registerUser',
@@ -34,7 +42,15 @@ export const registerUser = createAsyncThunk(
       const response = await registerUserApi(userData);
       return response;
     } catch (error) {
-      return rejectWithValue(error.message);
+      // Pass the full error object so components can inspect response details
+      return rejectWithValue({
+        message: error.message,
+        response: error.response,
+        data: error.response?.data,
+        status: error.response?.status,
+        // Include the original error for comprehensive inspection
+        originalError: error
+      });
     }
   }
 );
@@ -77,7 +93,8 @@ const authSlice = createSlice({
       })
       .addCase(loginUser.rejected, (state, { payload }) => {
         state.isLoading = false;
-        state.error = payload;
+        // Store the full error object, but display the message for basic UI needs
+        state.error = payload?.message || payload || 'Login failed';
       })
 
       // Registration flow
@@ -98,7 +115,8 @@ const authSlice = createSlice({
       })
       .addCase(registerUser.rejected, (state, { payload }) => {
         state.isLoading = false;
-        state.error = payload;
+        // Store the full error object, but display the message for basic UI needs
+        state.error = payload?.message || payload || 'Registration failed';
       });
   },
 });

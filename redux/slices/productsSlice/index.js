@@ -59,7 +59,7 @@ const mergeProductsByName = data => {
  * Returns an object: { items: Array, hasMore: boolean }
  * Keep this exported so productIndex and react-query can use it.
  */
-export const fetchProductsApi = async (pageNumber = 1, pageSize = 50) => {
+export const fetchProductsApi = async (pageNumber = 1, pageSize = 25) => {
   const url = `${baseUrl}/paged-products?pageNumber=${pageNumber}&pageSize=${pageSize}`;
   const res  = await axios.get(url);
   const items = Array.isArray(res.data) ? res.data : (res.data.items || []);
@@ -75,7 +75,7 @@ export const fetchProducts = createAsyncThunk(
   'products/fetchProducts',
   async (arg = { pageNumber: 1, pageSize: 50 }, { rejectWithValue }) => {
     try {
-      const { pageNumber = 1, pageSize = 50 } = arg || {};
+      const { pageNumber = 1, pageSize = 25 } = arg || {};
       const url = `${baseUrl}/paged-products?pageNumber=${pageNumber}&pageSize=${pageSize}`;
       const { data } = await axios.get(url);
       const arr = Array.isArray(data) ? data : (data.items || []);
