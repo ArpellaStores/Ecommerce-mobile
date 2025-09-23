@@ -18,7 +18,7 @@ import {
 } from 'react-native';
 import { useDispatch, useSelector } from 'react-redux';
 import { useForm, Controller } from 'react-hook-form';
-import { registerUser } from '../redux/slices/authSlice';
+import { registerUser, sendOtp, verifyOtp, resetOtpState } from '../redux/slices/authSlice';
 import FontAwesome from 'react-native-vector-icons/FontAwesome';
 import { Colors } from '../constants/Colors';
 import { useRouter } from 'expo-router';
@@ -27,16 +27,23 @@ import { useToast } from 'react-native-toast-notifications';
 /**
  * User Registration Screen
  * - Phone validation updated to: 254 followed by 9 digits (total 12 digits)
- * - OTP modal includes demo WIP note (demo OTP: 12345)
+ * - Real OTP system integrated with SMS functionality
  * - Enhanced error handling to detect duplicate users and redirect to Login
  * - If server returns DuplicateUserName or similar error, redirect user to Login and notify them
+ * - OTP verification required before registration completion
  */
 
 const Register = () => {
   const router = useRouter();
   const toast = useToast();
   const dispatch = useDispatch();
-  const { isAuthenticated, loading: reduxLoading } = useSelector((s) => s.auth);
+  const { 
+    isAuthenticated, 
+    loading: reduxLoading, 
+    otpSent, 
+    otpVerified, 
+    otpLoading 
+  } = useSelector((s) => s.auth);
 
   const { control, handleSubmit, formState: { errors }, reset } = useForm({
     defaultValues: { phone: '254' },
@@ -51,15 +58,26 @@ const Register = () => {
   const [otpModalVisible, setOtpModalVisible] = useState(false);
   const [otpValue, setOtpValue] = useState('');
   const [otpError, setOtpError] = useState('');
+  const [resendTimer, setResendTimer] = useState(0);
 
   const [savedFormData, setSavedFormData] = useState(null);
-  const DEMO_OTP = '12345';
 
   useEffect(() => {
     if (isAuthenticated) {
       router.replace('/Home');
     }
   }, [isAuthenticated, router]);
+
+  // Timer effect for resend OTP
+  useEffect(() => {
+    let interval;
+    if (resendTimer > 0) {
+      interval = setInterval(() => {
+        setResendTimer((prev) => prev - 1);
+      }, 1000);
+    }
+    return () => clearInterval(interval);
+  }, [resendTimer]);
 
   const validatePassword = (value) => {
     if (!value) return 'Password is required';
@@ -73,14 +91,26 @@ const Register = () => {
     setAgreementModalVisible(true);
   };
 
-  const onAgreementSubmit = () => {
+  const onAgreementSubmit = async () => {
     if (!agreementAccepted) {
       toast.show('Please accept the terms and conditions', { type: 'warning' });
       return;
     }
     setAgreementModalVisible(false);
+    
+    // Reset OTP state and send real OTP
+    dispatch(resetOtpState());
     setOtpModalVisible(true);
-    toast.show('OTP sent to your phone number (demo).', { type: 'info' });
+    
+    try {
+      await dispatch(sendOtp({ username: savedFormData.phone })).unwrap();
+      toast.show('OTP sent to your phone number', { type: 'success' });
+      setResendTimer(120); // 2 minutes timer
+    } catch (error) {
+      console.error('Failed to send OTP:', error);
+      toast.show('Failed to send OTP. Please try again.', { type: 'danger' });
+      setOtpModalVisible(false);
+    }
   };
 
   /**
@@ -166,23 +196,31 @@ const Register = () => {
   };
 
   const onOtpSubmit = async () => {
-    if (otpValue !== DEMO_OTP) {
-      setOtpError('Invalid OTP. Please try again.');
+    if (!otpValue || otpValue.length !== 6) {
+      setOtpError('Please enter a valid 6-digit OTP.');
       return;
     }
     setOtpError('');
-    setOtpModalVisible(false);
-
-    setLocalLoading(true);
-    const credentials = {
-      firstName: savedFormData.firstName,
-      lastName: savedFormData.lastName,
-      email: savedFormData.email || null,
-      phoneNumber: savedFormData.phone,
-      passwordHash: savedFormData.password,
-    };
 
     try {
+      // Verify OTP first
+      await dispatch(verifyOtp({ 
+        username: savedFormData.phone, 
+        otp: otpValue 
+      })).unwrap();
+
+      setOtpModalVisible(false);
+      setLocalLoading(true);
+
+      // If OTP is verified, proceed with registration
+      const credentials = {
+        firstName: savedFormData.firstName,
+        lastName: savedFormData.lastName,
+        email: savedFormData.email || null,
+        phoneNumber: savedFormData.phone,
+        passwordHash: savedFormData.password,
+      };
+
       // Attempt registration
       const result = await dispatch(registerUser(credentials)).unwrap();
 
@@ -201,7 +239,13 @@ const Register = () => {
       reset();
       router.replace('/Login');
     } catch (err) {
-      console.log('Registration error caught:', err);
+      console.log('OTP verification or registration error caught:', err);
+      
+      // Check if it's an OTP verification error
+      if (err?.message && err.message.includes('OTP')) {
+        setOtpError('Invalid OTP. Please try again.');
+        return;
+      }
       
       // Enhanced error inspection - check multiple possible locations for duplicate user info
       const candidatePayloads = [
@@ -569,24 +613,45 @@ const Register = () => {
               <View style={styles.modalBox}>
                 <Text style={styles.modalHeader}>OTP Verification</Text>
                 <Text style={styles.otpDesc}>
-                  Enter the code sent to your phone.
-                </Text>
-
-                {/* IMPORTANT: Inform users this is a demo OTP until backend is ready */}
-                <Text style={styles.otpAlert}>
-                  ⚠️ OTP system is currently a work-in-progress. For the beta, enter the demo code: <Text style={{ fontWeight: '700' }}>{DEMO_OTP}</Text>
+                  Enter the 6-digit code sent to your phone number.
                 </Text>
 
                 <TextInput
                   style={styles.otpInput}
-                  placeholder="OTP"
+                  placeholder="Enter OTP"
                   keyboardType="numeric"
-                  maxLength={5}
+                  maxLength={6}
                   value={otpValue}
                   onChangeText={(t) => setOtpValue((t || '').replace(/\D/g, ''))}
+                  editable={!otpLoading && !localLoading}
                 />
                 {otpError ? <Text style={styles.error}>{otpError}</Text> : null}
-                <Text style={styles.demoNote}>Demo OTP: {DEMO_OTP}</Text>
+                
+                {/* Resend OTP Button */}
+                <TouchableOpacity
+                  style={styles.resendButton}
+                  onPress={async () => {
+                    try {
+                      await dispatch(sendOtp({ username: savedFormData.phone })).unwrap();
+                      toast.show('OTP resent to your phone number', { type: 'success' });
+                      setResendTimer(120); // Reset 2 minutes timer
+                    } catch (error) {
+                      toast.show('Failed to resend OTP. Please try again.', { type: 'danger' });
+                    }
+                  }}
+                  disabled={otpLoading || localLoading || resendTimer > 0}
+                >
+                  <Text style={[
+                    styles.resendText,
+                    (otpLoading || localLoading || resendTimer > 0) && styles.resendTextDisabled
+                  ]}>
+                    {resendTimer > 0 
+                      ? `Resend in ${Math.floor(resendTimer / 60)}:${(resendTimer % 60).toString().padStart(2, '0')}`
+                      : 'Resend OTP'
+                    }
+                  </Text>
+                </TouchableOpacity>
+
                 <View style={styles.modalActions}>
                   <TouchableOpacity
                     style={styles.cancelBtn}
@@ -594,12 +659,26 @@ const Register = () => {
                       setOtpModalVisible(false);
                       setOtpValue('');
                       setOtpError('');
+                      setResendTimer(0);
+                      dispatch(resetOtpState());
                     }}
+                    disabled={otpLoading || localLoading}
                   >
                     <Text>Cancel</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity style={styles.submitBtn} onPress={onOtpSubmit}>
-                    <Text style={styles.submitText}>Verify</Text>
+                  <TouchableOpacity 
+                    style={[styles.submitBtn, (otpLoading || localLoading) && styles.buttonDisabled]} 
+                    onPress={onOtpSubmit}
+                    disabled={otpLoading || localLoading}
+                  >
+                    {(otpLoading || localLoading) ? (
+                      <View style={styles.buttonContent}>
+                        <ActivityIndicator size="small" color="#FFF" />
+                        <Text style={styles.submitText}>Verifying...</Text>
+                      </View>
+                    ) : (
+                      <Text style={styles.submitText}>Verify</Text>
+                    )}
                   </TouchableOpacity>
                 </View>
               </View>
@@ -690,9 +769,24 @@ const styles = StyleSheet.create({
     borderRadius: 8, paddingHorizontal: 10, backgroundColor: '#ffe',
     fontSize: 18, textAlign: 'center', letterSpacing: 5, marginBottom: 15,
   },
+  resendButton: {
+    backgroundColor: 'transparent',
+    padding: 10,
+    marginBottom: 15,
+    alignItems: 'center',
+  },
+  resendText: {
+    color: '#4B2C20',
+    fontSize: 14,
+    textDecorationLine: 'underline',
+  },
+  resendTextDisabled: {
+    color: '#ccc',
+    textDecorationLine: 'none',
+  },
   otpAlert: {
     color: '#D84315',
-    fontSize: 14,
+    fontSize: 12,
     marginBottom: 10,
     textAlign: 'center',
     fontStyle: 'italic',
@@ -707,7 +801,6 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     textDecorationLine: 'underline',
   },
-  demoNote: { color: '#666', fontSize: 12, fontStyle: 'italic', textAlign: 'center', marginBottom: 15 },
 });
 
 export default Register;

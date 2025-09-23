@@ -1,7 +1,7 @@
 // redux/slices/authSlice.js
 
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
-import { loginUserApi, registerUserApi } from '../../../services/Auth';
+import { loginUserApi, registerUserApi, sendOtpApi, verifyOtpApi } from '../../../services/Auth';
 
 /**
  * Async thunk for user login
@@ -55,6 +55,54 @@ export const registerUser = createAsyncThunk(
   }
 );
 
+/**
+ * Async thunk for sending OTP
+ * - Calls backend API to send OTP to user's phone
+ * - On success, returns confirmation
+ * - On failure, rejects with full error object
+ */
+export const sendOtp = createAsyncThunk(
+  'auth/sendOtp',
+  async ({ username }, { rejectWithValue }) => {
+    try {
+      const response = await sendOtpApi({ username });
+      return response;
+    } catch (error) {
+      return rejectWithValue({
+        message: error.message,
+        response: error.response,
+        data: error.response?.data,
+        status: error.response?.status,
+        originalError: error
+      });
+    }
+  }
+);
+
+/**
+ * Async thunk for verifying OTP
+ * - Calls backend API to verify OTP with username and code
+ * - On success, returns verification result
+ * - On failure, rejects with full error object
+ */
+export const verifyOtp = createAsyncThunk(
+  'auth/verifyOtp',
+  async ({ username, otp }, { rejectWithValue }) => {
+    try {
+      const response = await verifyOtpApi({ username, otp });
+      return response;
+    } catch (error) {
+      return rejectWithValue({
+        message: error.message,
+        response: error.response,
+        data: error.response?.data,
+        status: error.response?.status,
+        originalError: error
+      });
+    }
+  }
+);
+
 const authSlice = createSlice({
   name: 'auth',
   initialState: {
@@ -62,6 +110,9 @@ const authSlice = createSlice({
     isLoading: false,
     user: null,
     error: null,
+    otpSent: false,
+    otpVerified: false,
+    otpLoading: false,
   },
   reducers: {
     /**
@@ -70,6 +121,18 @@ const authSlice = createSlice({
     logout: (state) => {
       state.isAuthenticated = false;
       state.user = null;
+      state.error = null;
+      state.otpSent = false;
+      state.otpVerified = false;
+      state.otpLoading = false;
+    },
+    /**
+     * Reset OTP state
+     */
+    resetOtpState: (state) => {
+      state.otpSent = false;
+      state.otpVerified = false;
+      state.otpLoading = false;
       state.error = null;
     },
   },
@@ -117,9 +180,37 @@ const authSlice = createSlice({
         state.isLoading = false;
         // Store the full error object, but display the message for basic UI needs
         state.error = payload?.message || payload || 'Registration failed';
+      })
+
+      // Send OTP flow
+      .addCase(sendOtp.pending, (state) => {
+        state.otpLoading = true;
+        state.error = null;
+      })
+      .addCase(sendOtp.fulfilled, (state) => {
+        state.otpSent = true;
+        state.otpLoading = false;
+      })
+      .addCase(sendOtp.rejected, (state, { payload }) => {
+        state.otpLoading = false;
+        state.error = payload?.message || payload || 'Failed to send OTP';
+      })
+
+      // Verify OTP flow
+      .addCase(verifyOtp.pending, (state) => {
+        state.otpLoading = true;
+        state.error = null;
+      })
+      .addCase(verifyOtp.fulfilled, (state) => {
+        state.otpVerified = true;
+        state.otpLoading = false;
+      })
+      .addCase(verifyOtp.rejected, (state, { payload }) => {
+        state.otpLoading = false;
+        state.error = payload?.message || payload || 'OTP verification failed';
       });
   },
 });
 
-export const { logout } = authSlice.actions;
+export const { logout, resetOtpState } = authSlice.actions;
 export default authSlice.reducer;

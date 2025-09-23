@@ -44,14 +44,14 @@ const fetchWithRetry = async (endpoint, data, retries = 3) => {
       const fetchUrl = `${url}?_=${timestamp}`;
       
       const response = await fetch(fetchUrl, {
-        method: 'POST',
+        method: fetchUrl.includes('send-otp') ? 'GET' : 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Cache-Control': 'no-cache',
           'Connection': 'keep-alive',
           'Accept': '*/*',
         },
-        body: JSON.stringify(data)
+        body: fetchUrl.includes('send-otp') ? undefined : (Object.keys(data).length > 0 ? JSON.stringify(data) : undefined)
       });
       
       if (!response.ok) {
@@ -292,6 +292,116 @@ export function exitApp() {
     );
   }
 }
+
+/**
+ * sendOtpApi - Send OTP to user's phone number
+ */
+export const sendOtpApi = async ({ username }) => {
+  // iOS needs extra startup time
+  if (Platform.OS === 'ios') {
+    await new Promise((r) => setTimeout(r, 2000));
+  }
+
+  try {
+    console.log('Send OTP attempt using primary axios instance');
+    const response = await apiClient.get(`/send-otp?username=${username}`);
+    return Array.isArray(response.data) ? response.data[0] : response.data;
+  } catch (primaryError) {
+    console.error('Primary send OTP attempt failed:', primaryError);
+    
+    if (Platform.OS === 'ios') {
+      // Short delay before retry
+      await new Promise(r => setTimeout(r, 1000));
+      
+      try {
+        console.log('Send OTP retry with fresh axios instance');
+        const freshClient = createApiClient({
+          timeout: 30000,
+          headers: {
+            'Content-Type': 'application/json',
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Pragma': 'no-cache',
+            'Expires': '0',
+            'Accept': '*/*',
+          }
+        });
+        
+        const response = await freshClient.get(`/send-otp?username=${username}`);
+        return Array.isArray(response.data) ? response.data[0] : response.data;
+      } catch (secondaryError) {
+        console.error('Secondary send OTP attempt failed:', secondaryError);
+        
+        
+        // Last resort: native fetch API
+        try {
+          console.log('Send OTP final attempt using native fetch');
+          return await fetchWithRetry(`/send-otp?username=${username}`);
+        } catch (fetchError) {
+          console.error('Fetch send OTP attempt failed:', fetchError);
+          
+          throw new Error('Network error. All connection attempts failed.');
+        }
+      }
+    } else {
+      throw primaryError;
+    }
+  }
+};
+
+/**
+ * verifyOtpApi - Verify OTP with username and OTP code
+ */
+export const verifyOtpApi = async ({ username, otp }) => {
+  // iOS needs extra startup time
+  if (Platform.OS === 'ios') {
+    await new Promise((r) => setTimeout(r, 2000));
+  }
+
+  try {
+    console.log('Verify OTP attempt using primary axios instance');
+    const response = await apiClient.post(`/verify-otp?username=${username}&otp=${otp}`);
+    return Array.isArray(response.data) ? response.data[0] : response.data;
+  } catch (primaryError) {
+    console.error('Primary verify OTP attempt failed:', primaryError);
+    
+    if (Platform.OS === 'ios') {
+      // Short delay before retry
+      await new Promise(r => setTimeout(r, 1000));
+      
+      try {
+        console.log('Verify OTP retry with fresh axios instance');
+        const freshClient = createApiClient({
+          timeout: 30000,
+          headers: {
+            'Content-Type': 'application/json',
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Pragma': 'no-cache',
+            'Expires': '0',
+            'Accept': '*/*',
+          }
+        });
+        
+        const response = await freshClient.post(`/verify-otp?username=${username}&otp=${otp}`);
+        return Array.isArray(response.data) ? response.data[0] : response.data;
+      } catch (secondaryError) {
+        console.error('Secondary verify OTP attempt failed:', secondaryError);
+        
+        
+        // Last resort: native fetch API
+        try {
+          console.log('Verify OTP final attempt using native fetch');
+          return await fetchWithRetry(`/verify-otp?username=${username}&otp=${otp}`, {});
+        } catch (fetchError) {
+          console.error('Fetch verify OTP attempt failed:', fetchError);
+          
+          throw new Error('Network error. All connection attempts failed.');
+        }
+      }
+    } else {
+      throw primaryError;
+    }
+  }
+};
 
 /**
  * checkNetworkConnection
