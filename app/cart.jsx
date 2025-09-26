@@ -24,11 +24,8 @@ import { baseUrl } from '../constants/const.js';
 
 /**
  * Checkout Screen
- * - Displays cart summary and total
- * - Opens a checkout modal to collect M-Pesa number, location, and ID/passport
- * - Submits order to backend and handles success/failure
- *
- * NOTE: Only the payment-success modal UI copy is simplified here.
+ * - Adds `priceType` per order item: "Discounted" when discount threshold is met, otherwise "Retail".
+ * - Logs payload to console before sending to backend.
  */
 
 const Checkout = () => {
@@ -86,18 +83,32 @@ const Checkout = () => {
     }
   };
 
-  /** Convert cart items into orderItems array **/
-  const getOrderItems = () =>
-    Object.entries(cartItems).map(([id, item]) => ({
-      productId: parseInt(id, 10),
-      quantity: item.quantity,
-    }));
-
   /** Lookup product details by ID **/
   const getProductById = (id) =>
     products.find((p) => p.id === parseInt(id, 10)) || {};
 
-  /** Sum up total price **/
+  /** Convert cart items into orderItems array (with priceType) **/
+  const getOrderItems = () =>
+    Object.entries(cartItems).map(([id, item]) => {
+      const product = getProductById(id);
+      const qty = item.quantity || 0;
+
+      // Determine discount threshold and discounted price presence
+      const discountThreshold = parseFloat(product.discountQuantity ?? Infinity);
+      const discountedPrice = product.priceAfterDiscount != null
+        ? parseFloat(product.priceAfterDiscount)
+        : null;
+
+      const isDiscounted = discountedPrice !== null && qty >= discountThreshold;
+
+      return {
+        productId: parseInt(id, 10),
+        quantity: qty,
+        priceType: isDiscounted ? 'Discounted' : 'Retail',
+      };
+    });
+
+  /** Sum up total price (unchanged) **/
   const calculateTotal = () =>
     Object.entries(cartItems).reduce((sum, [id, item]) => {
       const p = getProductById(id);
@@ -139,7 +150,6 @@ const Checkout = () => {
    * Quick validation:
    * - Must be exactly 12 digits long
    * - Must start with 254 (Safaricom mobile numbers follow 07 -> 254)
-   * - (Note: mobile number portability exists; this check validates the common Safaricom format)
    */
   const isValidSafaricomMpesa = (normalized) => {
     if (!normalized) return false;
@@ -209,9 +219,10 @@ const Checkout = () => {
         orderItems,
       };
 
-      // Use axios (same as web) to send JSON and get a consistent response shape.
+      console.log('Order payload (mpesa):', payload);
+
       const response = await axios.post(`${baseUrl}/order`, payload, {
-        headers: { 'Content-Type': 'application/json' },
+        //headers: { 'Content-Type': 'application/json' },
         timeout: 20000,
       });
 
