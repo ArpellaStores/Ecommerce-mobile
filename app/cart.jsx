@@ -24,8 +24,9 @@ import { baseUrl } from '../constants/const.js';
 
 /**
  * Checkout Screen
- * - Adds `priceType` per order item: "Discounted" when discount threshold is met, otherwise "Retail".
- * - Logs payload to console before sending to backend.
+ * - Sends orderItems with priceType and unitPrice.
+ * - Logs payload and server response/error.
+ * - Shows applied discounted price in the UI (cart list + checkout summary + totals).
  */
 
 const Checkout = () => {
@@ -39,14 +40,12 @@ const Checkout = () => {
   const [locationLoading, setLocationLoading] = useState(false);
   const [showModal, setShowModal] = useState(false);
 
-  // Default mpesaNumber seeded from userPhone if present
   const [mpesaNumber, setMpesaNumber] = useState(userPhone || '254');
   const [mpesaError, setMpesaError] = useState('');
   const [buyerPin, setBuyerPin] = useState('');
   const [location, setLocation] = useState(null);
   const [paymentSuccess, setPaymentSuccess] = useState(false);
 
-  // Request permission on mount
   useEffect(() => {
     (async () => {
       try {
@@ -87,82 +86,70 @@ const Checkout = () => {
   const getProductById = (id) =>
     products.find((p) => p.id === parseInt(id, 10)) || {};
 
-  /** Convert cart items into orderItems array (with priceType) **/
-  const getOrderItems = () =>
+  /**
+   * Build fusedItems (product object merged with cart quantity and id)
+   * Mirrors web version so discount logic is identical.
+   */
+  const buildFusedItems = () =>
     Object.entries(cartItems).map(([id, item]) => {
       const product = getProductById(id);
-      const qty = item.quantity || 0;
+      return { ...product, quantity: item.quantity, id: product.id ?? Number(id) };
+    });
 
-      // Determine discount threshold and discounted price presence
-      const discountThreshold = parseFloat(product.discountQuantity ?? Infinity);
-      const discountedPrice = product.priceAfterDiscount != null
-        ? parseFloat(product.priceAfterDiscount)
-        : null;
-
-      const isDiscounted = discountedPrice !== null && qty >= discountThreshold;
-
+  /**
+   * Create orderItems for payload with priceType and unitPrice (numbers).
+   */
+  const buildOrderItems = (fusedItems) =>
+    fusedItems.map((i) => {
+      const qty = Number(i.quantity || 0);
+      const basePrice = parseFloat(i.price || 0);
+      const discountThreshold = parseFloat(i.discountQuantity ?? Infinity);
+      const discounted = i.priceAfterDiscount != null ? parseFloat(i.priceAfterDiscount) : null;
+      const unitPrice = discounted !== null && qty >= discountThreshold ? discounted : basePrice;
+      const isDiscounted = discounted !== null && qty >= discountThreshold;
       return {
-        productId: parseInt(id, 10),
+        productId: Number(i.id),
         quantity: qty,
         priceType: isDiscounted ? 'Discounted' : 'Retail',
+        unitPrice: Number(unitPrice),
       };
     });
 
-  /** Sum up total price (unchanged) **/
-  const calculateTotal = () =>
-    Object.entries(cartItems).reduce((sum, [id, item]) => {
-      const p = getProductById(id);
-      return sum + (p.price || 0) * item.quantity;
-    }, 0);
-
-  // --- M-Pesa number normalization & validation helpers ---
-
   /**
-   * Normalize input:
-   * - strip spaces, plus sign, and non-digits
-   * - if user types a local number starting with 0 (eg 0712...), convert to 254712...
-   * - if user types number without 254, we prepend 254
-   * Returns normalized digits-only string.
+   * Total calculation uses unitPrice with discount logic so UI matches payload.
    */
+  const calculateTotal = () => {
+    const fused = buildFusedItems();
+    return fused.reduce((acc, item) => {
+      const qty = Number(item.quantity || 0);
+      const basePrice = parseFloat(item.price || 0);
+      const discountThreshold = parseFloat(item.discountQuantity ?? Infinity);
+      const discounted = item.priceAfterDiscount != null ? parseFloat(item.priceAfterDiscount) : null;
+      const unitPrice = discounted !== null && qty >= discountThreshold ? discounted : basePrice;
+      return acc + unitPrice * qty;
+    }, 0);
+  };
+
+  // --- M-Pesa helpers ---
   const normalizeMpesaInput = (raw) => {
     if (!raw) return '';
-    // Remove non-digits (this strips + and spaces)
     let digits = raw.replace(/\D/g, '');
-
-    // If user typed local number starting with 0 (e.g., 0712...), convert to 254712...
-    if (digits.startsWith('0')) {
-      digits = '254' + digits.slice(1);
-    }
-
-    // If user typed number without country code but not starting with 0 (e.g., 712...), prepend 254
-    if (!digits.startsWith('254')) {
-      // But avoid duplicating if they already typed something like '254...'
-      digits = '254' + digits;
-    }
-
-    // Cap to 12 digits (254 + 9 digits local)
+    if (digits.startsWith('0')) digits = '254' + digits.slice(1);
+    if (!digits.startsWith('254')) digits = '254' + digits;
     if (digits.length > 12) digits = digits.slice(0, 12);
-
     return digits;
   };
 
-  /**
-   * Quick validation:
-   * - Must be exactly 12 digits long
-   * - Must start with 254 (Safaricom mobile numbers follow 07 -> 254)
-   */
   const isValidSafaricomMpesa = (normalized) => {
     if (!normalized) return false;
     const re = /^254\d{9}$/;
     return re.test(normalized);
   };
 
-  // Handler for changes from the text input
   const handleMpesaChange = (text) => {
     const normalized = normalizeMpesaInput(text);
     setMpesaNumber(normalized);
 
-    // Validate and set inline error message
     if (!normalized || normalized.length < 12) {
       setMpesaError('Enter M-Pesa number in format 254XXXXXXXX (no +).');
       return;
@@ -176,7 +163,6 @@ const Checkout = () => {
 
   /** Submit the order **/
   const submitOrder = async () => {
-    // Final validation before submit
     if (!mpesaNumber) {
       Alert.alert('Missing Information', 'M-Pesa payment number is required');
       return;
@@ -187,7 +173,9 @@ const Checkout = () => {
       return;
     }
 
-    const orderItems = getOrderItems();
+    const fusedItems = buildFusedItems();
+    const orderItems = buildOrderItems(fusedItems);
+
     if (orderItems.length === 0) {
       Alert.alert('Empty Cart', 'Your cart is empty');
       return;
@@ -196,39 +184,44 @@ const Checkout = () => {
     setLoading(true);
 
     try {
-      // Resolve coordinates: prefer user-granted location, otherwise try to fetch,
-      // otherwise fall back to Nairobi CBD coordinates.
+      // Resolve coordinates (prefer existing)
       let coords = location;
       if (!coords) {
         try {
-          const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced, maximumAge: 10000, timeout: 5000 });
+          const loc = await Location.getCurrentPositionAsync({
+            accuracy: Location.Accuracy.Balanced,
+            maximumAge: 10000,
+            timeout: 5000,
+          });
           coords = { latitude: loc.coords.latitude, longitude: loc.coords.longitude };
         } catch {
-          // fallback to Nairobi CBD
-          coords = { latitude: -1.28333, longitude: 36.81667 };
+          coords = { latitude: -1.28333, longitude: 36.81667 }; // Nairobi CBD fallback
         }
       }
 
       const payload = {
-        userId: userPhone,
-        phoneNumber: mpesaNumber,
+        userId: userPhone ?? null,
+        phoneNumber: String(mpesaNumber),
         orderPaymentType: 'Mpesa',
         buyerPin: buyerPin || 'N/A',
-        latitude: coords.latitude,
-        longitude: coords.longitude,
-        orderItems,
+        latitude: Number(coords.latitude),
+        longitude: Number(coords.longitude),
+        orderItems, // productId:Number, quantity:Number, priceType:String, unitPrice:Number
       };
 
-      console.log('Order payload (mpesa):', payload);
+      // Debug logging: payload
+      console.log('Order payload (mpesa):', JSON.stringify(payload, null, 2));
 
       const response = await axios.post(`${baseUrl}/order`, payload, {
-        //headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json' },
         timeout: 20000,
       });
 
-      // axios already parses JSON into response.data
+      // Log server success
+      console.log('Order response status:', response.status);
+      console.log('Order response data:', response.data);
+
       if (response.status >= 200 && response.status < 300) {
-        // Show the simplified payment instructions UI (persistent)
         setPaymentSuccess(true);
         dispatch(clearCart());
       } else {
@@ -237,6 +230,12 @@ const Checkout = () => {
         setShowModal(false);
       }
     } catch (err) {
+      // Detailed error logging
+      console.error('Order submission error:', {
+        message: err.message,
+        status: err?.response?.status,
+        data: err?.response?.data,
+      });
       const serverMessage = err?.response?.data?.message || err?.response?.data || err?.message;
       Alert.alert('Order Error', serverMessage || 'Could not connect to server. Please try again.');
       setShowModal(false);
@@ -245,13 +244,10 @@ const Checkout = () => {
     }
   };
 
-  /** Open checkout modal and fetch location if needed **/
   const openCheckoutModal = () => {
     setShowModal(true);
     if (!location) getCurrentLocation();
-    // ensure mpesaNumber is normalized when opening modal
     setMpesaNumber(normalizeMpesaInput(mpesaNumber));
-    // validate seed value
     if (!isValidSafaricomMpesa(normalizeMpesaInput(mpesaNumber))) {
       setMpesaError('Enter M-Pesa number in format 2547XXXXXXXX (no +).');
     } else {
@@ -259,18 +255,20 @@ const Checkout = () => {
     }
   };
 
-  /** Close the checkout modal **/
   const closeCheckoutModal = () => {
     setShowModal(false);
-    setPaymentSuccess(false); // Reset payment success state
+    setPaymentSuccess(false);
   };
 
-  // Handler when user confirms they have completed the M-Pesa payment.
   const handleUserConfirmedPayment = () => {
     setPaymentSuccess(false);
     setShowModal(false);
     router.replace('./Package');
   };
+
+  // Render helpers
+  const fusedForRender = buildFusedItems();
+  const total = calculateTotal();
 
   return (
     <View style={styles.container}>
@@ -278,7 +276,7 @@ const Checkout = () => {
         <Text style={styles.cartTitle}>Shopping Cart</Text>
       </View>
 
-      {Object.keys(cartItems).length === 0 ? (
+      {fusedForRender.length === 0 ? (
         <View style={styles.emptyCartContainer}>
           <FontAwesome name="shopping-cart" size={50} color="#aaa" />
           <Text style={styles.emptyCartText}>Your cart is empty</Text>
@@ -289,30 +287,33 @@ const Checkout = () => {
       ) : (
         <>
           <FlatList
-            data={Object.entries(cartItems)}
-            keyExtractor={([id]) => id}
+            data={fusedForRender}
+            keyExtractor={(item) => String(item.id)}
             renderItem={({ item }) => {
-              const [id, cartItem] = item;
-              const product = getProductById(id);
+              const qty = Number(item.quantity || 0);
+              const basePrice = parseFloat(item.price || 0);
+              const discountThreshold = parseFloat(item.discountQuantity ?? Infinity);
+              const discounted = item.priceAfterDiscount != null ? parseFloat(item.priceAfterDiscount) : null;
+              const unitPrice = discounted !== null && qty >= discountThreshold ? discounted : basePrice;
               return (
                 <View style={styles.cartItem}>
                   <View style={styles.cartItemRow}>
                     <Image
                       source={{
                         uri:
-                          product.productimages?.[0]?.imageUrl ||
-                          product.imageUrl ||
+                          item.productimages?.[0]?.imageUrl ||
+                          item.imageUrl ||
                           'https://via.placeholder.com/150',
                       }}
                       style={styles.cartItemImage}
                     />
                     <View style={styles.cartItemDetails}>
-                      <Text style={styles.itemName}>{product.name || 'Product'}</Text>
+                      <Text style={styles.itemName}>{item.name || 'Product'}</Text>
                       <View style={styles.itemDetails}>
-                        <Text>Qty: {cartItem.quantity}</Text>
-                        <Text>Price: KSH {product.price || 0}</Text>
+                        <Text>Qty: {qty}</Text>
+                        <Text>Price: KSH {unitPrice.toFixed(2)}</Text>
                         <Text style={styles.itemTotal}>
-                          Total: KSH {(product.price || 0) * cartItem.quantity}
+                          Total: KSH {(unitPrice * qty).toFixed(2)}
                         </Text>
                       </View>
                     </View>
@@ -323,7 +324,7 @@ const Checkout = () => {
           />
 
           <View style={styles.totalContainer}>
-            <Text style={styles.totalText}>Total: KSH {calculateTotal()}</Text>
+            <Text style={styles.totalText}>Total: KSH {total.toFixed(2)}</Text>
             <TouchableOpacity style={styles.checkoutButton} onPress={openCheckoutModal}>
               <Text style={styles.checkoutButtonText}>Proceed to Checkout</Text>
             </TouchableOpacity>
@@ -345,18 +346,19 @@ const Checkout = () => {
             </TouchableOpacity>
 
             {paymentSuccess ? (
-              // --- Simplified: short and direct instructions ---
               <View style={styles.successContainer}>
                 <FontAwesome name="info-circle" size={56} color="#1976d2" />
                 <Text style={styles.successTitle}>Finish payment via M-Pesa</Text>
                 <View style={styles.btnRow}>
+                  <TouchableOpacity style={styles.secondaryButton} onPress={handleUserConfirmedPayment}>
+                    <Text style={styles.secondaryButtonText}>I've Paid</Text>
+                  </TouchableOpacity>
                   <TouchableOpacity style={styles.secondaryButton} onPress={closeCheckoutModal}>
                     <Text style={styles.secondaryButtonText}>Close</Text>
                   </TouchableOpacity>
                 </View>
               </View>
             ) : (
-              // --- unchanged checkout form / summary ---
               <ScrollView style={styles.modalScroll}>
                 <Text style={styles.modalTitle}>Checkout</Text>
 
@@ -366,36 +368,40 @@ const Checkout = () => {
                     <Text style={styles.tableHeaderCell}>Image</Text>
                     <Text style={styles.tableHeaderCell}>Product</Text>
                     <Text style={styles.tableHeaderCell}>Qty</Text>
-                    <Text style={styles.tableHeaderCell}>Price</Text>
+                    <Text style={styles.tableHeaderCell}>Unit</Text>
                     <Text style={styles.tableHeaderCell}>Total</Text>
                   </View>
-                  {Object.entries(cartItems).map(([productId, cartItem]) => {
-                    const product = getProductById(productId);
+
+                  {fusedForRender.map((item) => {
+                    const qty = Number(item.quantity || 0);
+                    const basePrice = parseFloat(item.price || 0);
+                    const discountThreshold = parseFloat(item.discountQuantity ?? Infinity);
+                    const discounted = item.priceAfterDiscount != null ? parseFloat(item.priceAfterDiscount) : null;
+                    const unit = discounted !== null && qty >= discountThreshold ? discounted : basePrice;
                     return (
-                      <View style={styles.tableRow} key={productId}>
+                      <View style={styles.tableRow} key={String(item.id)}>
                         <Image
                           source={{
                             uri:
-                              product.productimages?.[0]?.imageUrl ||
-                              product.imageUrl ||
+                              item.productimages?.[0]?.imageUrl ||
+                              item.imageUrl ||
                               'https://via.placeholder.com/150',
                           }}
                           style={styles.tableImage}
                         />
                         <Text style={styles.tableCell} numberOfLines={1}>
-                          {product.name}
+                          {item.name}
                         </Text>
-                        <Text style={styles.tableCell}>{cartItem.quantity}</Text>
-                        <Text style={styles.tableCell}>{product.price}</Text>
-                        <Text style={styles.tableCell}>
-                          {(product.price || 0) * cartItem.quantity}
-                        </Text>
+                        <Text style={styles.tableCell}>{qty}</Text>
+                        <Text style={styles.tableCell}>KSH {unit.toFixed(2)}</Text>
+                        <Text style={styles.tableCell}>KSH {(unit * qty).toFixed(2)}</Text>
                       </View>
                     );
                   })}
+
                   <View style={styles.tableTotalRow}>
                     <Text style={styles.tableTotalLabel}>TOTAL</Text>
-                    <Text style={styles.tableTotalValue}>KSH {calculateTotal()}</Text>
+                    <Text style={styles.tableTotalValue}>KSH {total.toFixed(2)}</Text>
                   </View>
                 </View>
 
@@ -423,9 +429,7 @@ const Checkout = () => {
                 <View style={styles.locationContainer}>
                   <Text style={styles.locationLabel}>Delivery Location:</Text>
                   <Text style={styles.locationText}>
-                    {location
-                      ? `${location.latitude.toFixed(6)}, ${location.longitude.toFixed(6)}`
-                      : 'Not set'}
+                    {location ? `${location.latitude.toFixed(6)}, ${location.longitude.toFixed(6)}` : 'Not set'}
                   </Text>
                   <TouchableOpacity
                     style={styles.locationButton}
@@ -531,7 +535,6 @@ const styles = StyleSheet.create({
   backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', alignItems: 'center' },
   backdropText: { color: 'white', marginTop: 10 },
 
-  // --- simplified success modal styles ---
   successContainer: { alignItems: 'center', padding: 10 },
   successTitle: { fontSize: 18, fontWeight: '700', color: '#222', marginTop: 12, textAlign: 'center' },
   simpleLine: { marginTop: 8, fontSize: 15, color: '#333', textAlign: 'center' },
@@ -545,7 +548,6 @@ const styles = StyleSheet.create({
   bottomNavigation: { flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center', height: 50, borderTopWidth: 1, borderTopColor: '#ccc', backgroundColor: '#FFF8E1' },
   navItem: { alignItems: 'center' },
 
-  // new inline error
   errorText: { color: 'red', marginTop: 6, fontSize: 13 },
 });
 
