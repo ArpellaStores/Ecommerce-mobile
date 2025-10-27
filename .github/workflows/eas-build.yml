@@ -5,18 +5,21 @@ on:
     branches: ["main"]
 
 permissions:
-  contents: write   # needed to create releases & upload assets
+  contents: write
   id-token: write
 
 jobs:
   build-and-publish:
     runs-on: ubuntu-latest
     timeout-minutes: 120
-    steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
 
-      - name: Setup Node
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '18'
@@ -31,90 +34,35 @@ jobs:
         run: |
           set -euo pipefail
           if [ -z "${EXPO_TOKEN:-}" ]; then
-            echo "❌ EXPO_TOKEN not set"
+            echo "ERROR: EXPO_TOKEN secret is not set."
             exit 1
           fi
-          echo "✅ EXPO_TOKEN present"
 
       - name: Ensure eas-cli available
         run: |
           set -euo pipefail
-          if npx --no-install eas --version >/dev/null 2>&1; then
-            echo "✅ eas via npx"
-          else
-            echo "ℹ️ Installing eas-cli globally"
+          if ! command -v npx >/dev/null 2>&1; then
+            echo "ERROR: npx is not available."
+            exit 1
+          fi
+          if ! npx --no-install eas --version >/dev/null 2>&1; then
             npm install -g eas-cli@latest
           fi
           eas --version
 
-      - name: Login to EAS (non-interactive)
-        env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-        run: |
-          set -euo pipefail
-          npx eas whoami 2>/dev/null || npx eas login --token "$EXPO_TOKEN"
-          npx eas whoami
-
-      - name: Start EAS build (Android) and wait for completion
+      - name: Start EAS build (android) and wait for completion
         id: eas_build
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: |
           set -euo pipefail
-          # Install jq to parse JSON
-          sudo apt-get update && sudo apt-get install -y jq
-          # Start build and wait for completion. Adjust --profile to your profile (e.g., production, preview)
-          echo "🚀 Starting EAS build (android)..."
-          # --wait makes CLI wait until build finishes and returns JSON info
-          npx eas build --platform android --profile preview --non-interactive --wait --json > build-output.json
-          cat build-output.json
-          BUILD_ID=$(jq -r '.id' build-output.json)
-          ARTIFACT_URL=$(jq -r '.artifacts[0].url // empty' build-output.json)
-          if [ -z "$ARTIFACT_URL" ]; then
-            echo "❌ No artifact URL found in build output. Dumping file:"
-            cat build-output.json
+
+          # verify git working tree is clean
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "ERROR: Git working tree is dirty. Commit or stash changes and retry."
+            git status --porcelain
             exit 1
           fi
-          echo "build_id=$BUILD_ID" >> $GITHUB_OUTPUT
-          echo "artifact_url=$ARTIFACT_URL" >> $GITHUB_OUTPUT
-          echo "✅ Build finished. Artifact: $ARTIFACT_URL"
 
-      - name: Download artifact
-        id: download_artifact
-        run: |
-          set -euo pipefail
-          ART_URL="${{ steps.eas_build.outputs.artifact_url }}"
-          echo "Downloading build artifact from: $ART_URL"
-          # Save with an appropriate filename (apk or aab)
-          FILE_NAME="app-android.${ART_URL##*.}"
-          curl -L --retry 5 -o "$FILE_NAME" "$ART_URL"
-          ls -lh "$FILE_NAME"
-          echo "file_name=$FILE_NAME" >> $GITHUB_OUTPUT
-
-      - name: Upload artifact to Actions (so artifacts are retained)
-        uses: actions/upload-artifact@v4
-        with:
-          name: android-build
-          path: ${{ steps.download_artifact.outputs.file_name }}
-
-      - name: Create GitHub release (pre-release) and upload asset
-        id: release
-        uses: ncipollo/release-action@v1
-        with:
-          tag: "eas-build-${{ steps.eas_build.outputs.build_id }}"
-          name: "EAS Build ${{ steps.eas_build.outputs.build_id }}"
-          body: |
-            Auto build from ${{ github.actor }} @ ${{ github.sha }}
-            EAS Build ID: ${{ steps.eas_build.outputs.build_id }}
-          draft: false
-          prerelease: true
-          # The action automatically uploads matched files specified by 'files' below
-          files: ${{ steps.download_artifact.outputs.file_name }}
-
-      - name: Show final download URL
-        run: |
-          set -euo pipefail
-          RELEASE_URL="https://github.com/${{ github.repository }}/releases/tag/eas-build-${{ steps.eas_build.outputs.build_id }}"
-          echo "✅ Release created: $RELEASE_URL"
-          echo "Public download link (Release page): $RELEASE_URL"
-          echo "You can also view the attached asset on that release page."
+          # ensure jq is available
+          if ! command -v jq >/dev/null
