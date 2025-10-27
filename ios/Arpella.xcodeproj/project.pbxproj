@@ -7,29 +7,29 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		1272DB3954FADF02FDA6F4A8 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 6CD37FB8076304C40B8BDEA1 /* PrivacyInfo.xcprivacy */; };
 		13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB51A68108700A75B9A /* Images.xcassets */; };
 		3E461D99554A48A4959DE609 /* SplashScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */; };
-		599C2BBA21A2667F51320FD3 /* libPods-Arpella.a in Frameworks */ = {isa = PBXBuildFile; fileRef = F4B115A04B5DEB6CE93C210B /* libPods-Arpella.a */; };
+		B13E5BA7FA3E8D928BF6E192 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 03C5B6AE8459EE1DD427E3EB /* PrivacyInfo.xcprivacy */; };
 		BB2F792D24A3F905000567C9 /* Expo.plist in Resources */ = {isa = PBXBuildFile; fileRef = BB2F792C24A3F905000567C9 /* Expo.plist */; };
-		EAEEC72AE103E8E3209AA021 /* ExpoModulesProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 23195EF7897A761C81F6BF62 /* ExpoModulesProvider.swift */; };
+		CA0F9B54F1918F6CEE8BDF67 /* ExpoModulesProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = CAD7B5759BBA04D21FC9FE0B /* ExpoModulesProvider.swift */; };
+		D707C316CD1630033667CB3B /* libPods-Arpella.a in Frameworks */ = {isa = PBXBuildFile; fileRef = AFC17C2D50C25BACAC744631 /* libPods-Arpella.a */; };
 		F11748422D0307B40044C1D9 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = F11748412D0307B40044C1D9 /* AppDelegate.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		03C5B6AE8459EE1DD427E3EB /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; name = PrivacyInfo.xcprivacy; path = Arpella/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		13B07F961A680F5B00A75B9A /* Arpella.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Arpella.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		13B07FB51A68108700A75B9A /* Images.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; name = Images.xcassets; path = Arpella/Images.xcassets; sourceTree = "<group>"; };
 		13B07FB61A68108700A75B9A /* Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = Info.plist; path = Arpella/Info.plist; sourceTree = "<group>"; };
-		14A10D5981CCAB4437DB0B7B /* Pods-Arpella.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Arpella.release.xcconfig"; path = "Target Support Files/Pods-Arpella/Pods-Arpella.release.xcconfig"; sourceTree = "<group>"; };
-		23195EF7897A761C81F6BF62 /* ExpoModulesProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExpoModulesProvider.swift; path = "Pods/Target Support Files/Pods-Arpella/ExpoModulesProvider.swift"; sourceTree = "<group>"; };
-		6CD37FB8076304C40B8BDEA1 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; name = PrivacyInfo.xcprivacy; path = Arpella/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
-		86E1039CC6D14F0B7AFAE266 /* Pods-Arpella.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Arpella.debug.xcconfig"; path = "Target Support Files/Pods-Arpella/Pods-Arpella.debug.xcconfig"; sourceTree = "<group>"; };
 		AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = SplashScreen.storyboard; path = Arpella/SplashScreen.storyboard; sourceTree = "<group>"; };
+		AFC17C2D50C25BACAC744631 /* libPods-Arpella.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-Arpella.a"; sourceTree = BUILT_PRODUCTS_DIR; };
 		BB2F792C24A3F905000567C9 /* Expo.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = Expo.plist; sourceTree = "<group>"; };
+		CAD7B5759BBA04D21FC9FE0B /* ExpoModulesProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExpoModulesProvider.swift; path = "Pods/Target Support Files/Pods-Arpella/ExpoModulesProvider.swift"; sourceTree = "<group>"; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
 		F11748412D0307B40044C1D9 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AppDelegate.swift; path = Arpella/AppDelegate.swift; sourceTree = "<group>"; };
 		F11748442D0722820044C1D9 /* Arpella-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = "Arpella-Bridging-Header.h"; path = "Arpella/Arpella-Bridging-Header.h"; sourceTree = "<group>"; };
-		F4B115A04B5DEB6CE93C210B /* libPods-Arpella.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-Arpella.a"; sourceTree = BUILT_PRODUCTS_DIR; };
+		F26C6DBD4F4BD8E01A6A358D /* Pods-Arpella.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Arpella.release.xcconfig"; path = "Target Support Files/Pods-Arpella/Pods-Arpella.release.xcconfig"; sourceTree = "<group>"; };
+		FCD81B86FB5119DEA778B8E7 /* Pods-Arpella.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Arpella.debug.xcconfig"; path = "Target Support Files/Pods-Arpella/Pods-Arpella.debug.xcconfig"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -37,21 +37,13 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				599C2BBA21A2667F51320FD3 /* libPods-Arpella.a in Frameworks */,
+				D707C316CD1630033667CB3B /* libPods-Arpella.a in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
-		0E05D5E2DE1E6D9FD9A48A17 /* Arpella */ = {
-			isa = PBXGroup;
-			children = (
-				23195EF7897A761C81F6BF62 /* ExpoModulesProvider.swift */,
-			);
-			name = Arpella;
-			sourceTree = "<group>";
-		};
 		13B07FAE1A68108700A75B9A /* Arpella */ = {
 			isa = PBXGroup;
 			children = (
@@ -61,7 +53,7 @@
 				13B07FB51A68108700A75B9A /* Images.xcassets */,
 				13B07FB61A68108700A75B9A /* Info.plist */,
 				AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */,
-				6CD37FB8076304C40B8BDEA1 /* PrivacyInfo.xcprivacy */,
+				03C5B6AE8459EE1DD427E3EB /* PrivacyInfo.xcprivacy */,
 			);
 			name = Arpella;
 			sourceTree = "<group>";
@@ -70,19 +62,17 @@
 			isa = PBXGroup;
 			children = (
 				ED297162215061F000B7C4FE /* JavaScriptCore.framework */,
-				F4B115A04B5DEB6CE93C210B /* libPods-Arpella.a */,
+				AFC17C2D50C25BACAC744631 /* libPods-Arpella.a */,
 			);
 			name = Frameworks;
 			sourceTree = "<group>";
 		};
-		7E8EFE3B6075BDFE6D23FCA0 /* Pods */ = {
+		42ECAD2B73851E85346F8041 /* Arpella */ = {
 			isa = PBXGroup;
 			children = (
-				86E1039CC6D14F0B7AFAE266 /* Pods-Arpella.debug.xcconfig */,
-				14A10D5981CCAB4437DB0B7B /* Pods-Arpella.release.xcconfig */,
+				CAD7B5759BBA04D21FC9FE0B /* ExpoModulesProvider.swift */,
 			);
-			name = Pods;
-			path = Pods;
+			name = Arpella;
 			sourceTree = "<group>";
 		};
 		832341AE1AAA6A7D00B99B32 /* Libraries */ = {
@@ -99,8 +89,8 @@
 				832341AE1AAA6A7D00B99B32 /* Libraries */,
 				83CBBA001A601CBA00E9B192 /* Products */,
 				2D16E6871FA4F8E400B85C8A /* Frameworks */,
-				7E8EFE3B6075BDFE6D23FCA0 /* Pods */,
-				C4DC4F1CE7027A1A43B8002D /* ExpoModulesProviders */,
+				D0F2DB9579431AC25D80CD0F /* Pods */,
+				E265688B81FAADFE74D276CA /* ExpoModulesProviders */,
 			);
 			indentWidth = 2;
 			sourceTree = "<group>";
@@ -124,10 +114,20 @@
 			path = Arpella/Supporting;
 			sourceTree = "<group>";
 		};
-		C4DC4F1CE7027A1A43B8002D /* ExpoModulesProviders */ = {
+		D0F2DB9579431AC25D80CD0F /* Pods */ = {
 			isa = PBXGroup;
 			children = (
-				0E05D5E2DE1E6D9FD9A48A17 /* Arpella */,
+				FCD81B86FB5119DEA778B8E7 /* Pods-Arpella.debug.xcconfig */,
+				F26C6DBD4F4BD8E01A6A358D /* Pods-Arpella.release.xcconfig */,
+			);
+			name = Pods;
+			path = Pods;
+			sourceTree = "<group>";
+		};
+		E265688B81FAADFE74D276CA /* ExpoModulesProviders */ = {
+			isa = PBXGroup;
+			children = (
+				42ECAD2B73851E85346F8041 /* Arpella */,
 			);
 			name = ExpoModulesProviders;
 			sourceTree = "<group>";
@@ -140,13 +140,13 @@
 			buildConfigurationList = 13B07F931A680F5B00A75B9A /* Build configuration list for PBXNativeTarget "Arpella" */;
 			buildPhases = (
 				08A4A3CD28434E44B6B9DE2E /* [CP] Check Pods Manifest.lock */,
-				99E55B61E83CCB77F034E0AB /* [Expo] Configure project */,
+				60240F09E0746D8CEDB5ABC6 /* [Expo] Configure project */,
 				13B07F871A680F5B00A75B9A /* Sources */,
 				13B07F8C1A680F5B00A75B9A /* Frameworks */,
 				13B07F8E1A680F5B00A75B9A /* Resources */,
 				00DD1BFF1BD5951E006B06BC /* Bundle React Native code and images */,
 				800E24972A6A228C8D4807E9 /* [CP] Copy Pods Resources */,
-				D4CA586CAEDA1FC304349EC1 /* [CP] Embed Pods Frameworks */,
+				78FCD8AB86CAFF52408A6516 /* [CP] Embed Pods Frameworks */,
 			);
 			buildRules = (
 			);
@@ -196,7 +196,7 @@
 				BB2F792D24A3F905000567C9 /* Expo.plist in Resources */,
 				13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */,
 				3E461D99554A48A4959DE609 /* SplashScreen.storyboard in Resources */,
-				1272DB3954FADF02FDA6F4A8 /* PrivacyInfo.xcprivacy in Resources */,
+				B13E5BA7FA3E8D928BF6E192 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -240,6 +240,52 @@
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
 			shellScript = "diff \"${PODS_PODFILE_DIR_PATH}/Podfile.lock\" \"${PODS_ROOT}/Manifest.lock\" > /dev/null\nif [ $? != 0 ] ; then\n    # print error to STDERR\n    echo \"error: The sandbox is not in sync with the Podfile.lock. Run 'pod install' or update your CocoaPods installation.\" >&2\n    exit 1\nfi\n# This output is used by Xcode 'outputs' to avoid re-running this script phase.\necho \"SUCCESS\" > \"${SCRIPT_OUTPUT_FILE_0}\"\n";
+			showEnvVarsInLog = 0;
+		};
+		60240F09E0746D8CEDB5ABC6 /* [Expo] Configure project */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/.xcode.env",
+				"$(SRCROOT)/.xcode.env.local",
+				"$(SRCROOT)/Arpella/Arpella.entitlements",
+				"$(SRCROOT)/Pods/Target Support Files/Pods-Arpella/expo-configure-project.sh",
+			);
+			name = "[Expo] Configure project";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(SRCROOT)/Pods/Target Support Files/Pods-Arpella/ExpoModulesProvider.swift",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "# This script configures Expo modules and generates the modules provider file.\nbash -l -c \"./Pods/Target\\ Support\\ Files/Pods-Arpella/expo-configure-project.sh\"\n";
+		};
+		78FCD8AB86CAFF52408A6516 /* [CP] Embed Pods Frameworks */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+				"${PODS_ROOT}/Target Support Files/Pods-Arpella/Pods-Arpella-frameworks.sh",
+				"${PODS_XCFRAMEWORKS_BUILD_DIR}/React-Core-prebuilt/React.framework/React",
+				"${PODS_XCFRAMEWORKS_BUILD_DIR}/ReactNativeDependencies/ReactNativeDependencies.framework/ReactNativeDependencies",
+				"${PODS_XCFRAMEWORKS_BUILD_DIR}/hermes-engine/Pre-built/hermes.framework/hermes",
+			);
+			name = "[CP] Embed Pods Frameworks";
+			outputPaths = (
+				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/React.framework",
+				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/ReactNativeDependencies.framework",
+				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/hermes.framework",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-Arpella/Pods-Arpella-frameworks.sh\"\n";
 			showEnvVarsInLog = 0;
 		};
 		800E24972A6A228C8D4807E9 /* [CP] Copy Pods Resources */ = {
@@ -320,52 +366,6 @@
 			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-Arpella/Pods-Arpella-resources.sh\"\n";
 			showEnvVarsInLog = 0;
 		};
-		99E55B61E83CCB77F034E0AB /* [Expo] Configure project */ = {
-			isa = PBXShellScriptBuildPhase;
-			alwaysOutOfDate = 1;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputFileListPaths = (
-			);
-			inputPaths = (
-				"$(SRCROOT)/.xcode.env",
-				"$(SRCROOT)/.xcode.env.local",
-				"$(SRCROOT)/Arpella/Arpella.entitlements",
-				"$(SRCROOT)/Pods/Target Support Files/Pods-Arpella/expo-configure-project.sh",
-			);
-			name = "[Expo] Configure project";
-			outputFileListPaths = (
-			);
-			outputPaths = (
-				"$(SRCROOT)/Pods/Target Support Files/Pods-Arpella/ExpoModulesProvider.swift",
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "# This script configures Expo modules and generates the modules provider file.\nbash -l -c \"./Pods/Target\\ Support\\ Files/Pods-Arpella/expo-configure-project.sh\"\n";
-		};
-		D4CA586CAEDA1FC304349EC1 /* [CP] Embed Pods Frameworks */ = {
-			isa = PBXShellScriptBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputPaths = (
-				"${PODS_ROOT}/Target Support Files/Pods-Arpella/Pods-Arpella-frameworks.sh",
-				"${PODS_XCFRAMEWORKS_BUILD_DIR}/React-Core-prebuilt/React.framework/React",
-				"${PODS_XCFRAMEWORKS_BUILD_DIR}/ReactNativeDependencies/ReactNativeDependencies.framework/ReactNativeDependencies",
-				"${PODS_XCFRAMEWORKS_BUILD_DIR}/hermes-engine/Pre-built/hermes.framework/hermes",
-			);
-			name = "[CP] Embed Pods Frameworks";
-			outputPaths = (
-				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/React.framework",
-				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/ReactNativeDependencies.framework",
-				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/hermes.framework",
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-Arpella/Pods-Arpella-frameworks.sh\"\n";
-			showEnvVarsInLog = 0;
-		};
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -374,7 +374,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				F11748422D0307B40044C1D9 /* AppDelegate.swift in Sources */,
-				EAEEC72AE103E8E3209AA021 /* ExpoModulesProvider.swift in Sources */,
+				CA0F9B54F1918F6CEE8BDF67 /* ExpoModulesProvider.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -383,7 +383,7 @@
 /* Begin XCBuildConfiguration section */
 		13B07F941A680F5B00A75B9A /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = 86E1039CC6D14F0B7AFAE266 /* Pods-Arpella.debug.xcconfig */;
+			baseConfigurationReference = FCD81B86FB5119DEA778B8E7 /* Pods-Arpella.debug.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
@@ -419,7 +419,7 @@
 		};
 		13B07F951A680F5B00A75B9A /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = 14A10D5981CCAB4437DB0B7B /* Pods-Arpella.release.xcconfig */;
+			baseConfigurationReference = F26C6DBD4F4BD8E01A6A358D /* Pods-Arpella.release.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;

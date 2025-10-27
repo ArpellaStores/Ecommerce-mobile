@@ -26,9 +26,7 @@ export default ({ config }) => ({
       url: "https://u.expo.dev/74e626eb-21e5-44ef-b9e4-dc59288ad740",
       fallbackToCacheTimeout: 0
     },
-
-    jsEngine: "jsc",
-
+    jsEngine : "hermes",
     android: {
       package: "com.mgachanja.arpella",
       versionCode: 2,
@@ -54,7 +52,7 @@ export default ({ config }) => ({
       supportsTablet: true,
       bundleIdentifier: "com.mgachanja.arpella",
       buildNumber: "2",
-      jsEngine: "jsc",
+      jsEngine: "hermes",
       infoPlist: {
         NSAppTransportSecurity: {
           NSAllowsArbitraryLoads: true
