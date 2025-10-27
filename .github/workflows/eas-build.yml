@@ -1,23 +1,22 @@
-name: Publish EAS Update — canary (on push to main)
+name: EAS Build -> Artifact & Release
 
 on:
   push:
     branches: ["main"]
 
 permissions:
-  contents: read
+  contents: write   # needed to create releases & upload assets
   id-token: write
 
 jobs:
-  publish-canary:
+  build-and-publish:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-
+    timeout-minutes: 120
     steps:
-      - name: Checkout repository
+      - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
+      - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: '18'
@@ -26,25 +25,24 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Validate EXPO_TOKEN secret
+      - name: Validate EXPO_TOKEN
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: |
           set -euo pipefail
           if [ -z "${EXPO_TOKEN:-}" ]; then
-            echo "❌ ERROR: EXPO_TOKEN secret is not set. Add it in repository settings -> Secrets."
+            echo "❌ EXPO_TOKEN not set"
             exit 1
           fi
-          echo "✅ EXPO_TOKEN is present (redacted)."
+          echo "✅ EXPO_TOKEN present"
 
-      - name: Ensure eas CLI available
+      - name: Ensure eas-cli available
         run: |
           set -euo pipefail
-          # Try to use npx without installing; if not present, install globally.
           if npx --no-install eas --version >/dev/null 2>&1; then
-            echo "✅ eas (via npx) is available"
+            echo "✅ eas via npx"
           else
-            echo "ℹ️ eas not found via npx — installing eas-cli globally"
+            echo "ℹ️ Installing eas-cli globally"
             npm install -g eas-cli@latest
           fi
           eas --version
@@ -54,19 +52,69 @@ jobs:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: |
           set -euo pipefail
-          echo "🔐 Logging in to EAS..."
-          # prefer non-interactive login; whoami will confirm success
           npx eas whoami 2>/dev/null || npx eas login --token "$EXPO_TOKEN"
           npx eas whoami
 
-      - name: Publish EAS update to canary
+      - name: Start EAS build (Android) and wait for completion
+        id: eas_build
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: |
           set -euo pipefail
-          echo "🚀 Publishing update to canary branch..."
-          GIT_SHA=${GITHUB_SHA::8}
-          npx eas update --branch canary \
-            --message "Auto canary OTA from ${GITHUB_ACTOR} - ${GIT_SHA}" \
-            --non-interactive
-          echo "✅ EAS update published."
+          # Install jq to parse JSON
+          sudo apt-get update && sudo apt-get install -y jq
+          # Start build and wait for completion. Adjust --profile to your profile (e.g., production, preview)
+          echo "🚀 Starting EAS build (android)..."
+          # --wait makes CLI wait until build finishes and returns JSON info
+          npx eas build --platform android --profile preview --non-interactive --wait --json > build-output.json
+          cat build-output.json
+          BUILD_ID=$(jq -r '.id' build-output.json)
+          ARTIFACT_URL=$(jq -r '.artifacts[0].url // empty' build-output.json)
+          if [ -z "$ARTIFACT_URL" ]; then
+            echo "❌ No artifact URL found in build output. Dumping file:"
+            cat build-output.json
+            exit 1
+          fi
+          echo "build_id=$BUILD_ID" >> $GITHUB_OUTPUT
+          echo "artifact_url=$ARTIFACT_URL" >> $GITHUB_OUTPUT
+          echo "✅ Build finished. Artifact: $ARTIFACT_URL"
+
+      - name: Download artifact
+        id: download_artifact
+        run: |
+          set -euo pipefail
+          ART_URL="${{ steps.eas_build.outputs.artifact_url }}"
+          echo "Downloading build artifact from: $ART_URL"
+          # Save with an appropriate filename (apk or aab)
+          FILE_NAME="app-android.${ART_URL##*.}"
+          curl -L --retry 5 -o "$FILE_NAME" "$ART_URL"
+          ls -lh "$FILE_NAME"
+          echo "file_name=$FILE_NAME" >> $GITHUB_OUTPUT
+
+      - name: Upload artifact to Actions (so artifacts are retained)
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-build
+          path: ${{ steps.download_artifact.outputs.file_name }}
+
+      - name: Create GitHub release (pre-release) and upload asset
+        id: release
+        uses: ncipollo/release-action@v1
+        with:
+          tag: "eas-build-${{ steps.eas_build.outputs.build_id }}"
+          name: "EAS Build ${{ steps.eas_build.outputs.build_id }}"
+          body: |
+            Auto build from ${{ github.actor }} @ ${{ github.sha }}
+            EAS Build ID: ${{ steps.eas_build.outputs.build_id }}
+          draft: false
+          prerelease: true
+          # The action automatically uploads matched files specified by 'files' below
+          files: ${{ steps.download_artifact.outputs.file_name }}
+
+      - name: Show final download URL
+        run: |
+          set -euo pipefail
+          RELEASE_URL="https://github.com/${{ github.repository }}/releases/tag/eas-build-${{ steps.eas_build.outputs.build_id }}"
+          echo "✅ Release created: $RELEASE_URL"
+          echo "Public download link (Release page): $RELEASE_URL"
+          echo "You can also view the attached asset on that release page."
