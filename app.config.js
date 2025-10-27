@@ -20,12 +20,10 @@ export default ({ config }) => ({
       "**/*"
     ],
 
-    // IMPORTANT: runtimeVersion controls which OTA updates apply to which native builds.
-    // We tie it to appVersion to avoid sending JS updates to mismatched native builds.
     runtimeVersion: { policy: "appVersion" },
 
     updates: {
-      // 0 = immediately fallback to cached bundle timeout; adjust as needed
+      url: "https://u.expo.dev/74e626eb-21e5-44ef-b9e4-dc59288ad740",
       fallbackToCacheTimeout: 0
     },
 
@@ -77,10 +75,10 @@ export default ({ config }) => ({
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/splash-icon.png",
-          "imageWidth": 200,
-          "resizeMode": "contain",
-          "backgroundColor": "#ffffff"
+          image: "./assets/images/splash-icon.png",
+          imageWidth: 200,
+          resizeMode: "contain",
+          backgroundColor: "#ffffff"
         }
       ],
       "expo-secure-store"
