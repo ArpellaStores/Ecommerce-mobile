@@ -20,14 +20,14 @@ export default ({ config }) => ({
       "**/*"
     ],
 
-    runtimeVersion: { policy: "appVersion" },
+    // Change this from policy to explicit version
+    runtimeVersion: "1.0.1",
 
     updates: {
       url: "https://u.expo.dev/74e626eb-21e5-44ef-b9e4-dc59288ad740",
       fallbackToCacheTimeout: 0
     },
 
-    // Add this to disable Hermes globally
     jsEngine: "jsc",
 
     android: {
@@ -55,7 +55,6 @@ export default ({ config }) => ({
       supportsTablet: true,
       bundleIdentifier: "com.mgachanja.arpella",
       buildNumber: "2",
-      // Add this to disable Hermes on iOS
       jsEngine: "jsc",
       infoPlist: {
         NSAppTransportSecurity: {
