@@ -89,9 +89,9 @@ android {
 
     namespace 'com.mgachanja.arpella'
     defaultConfig {
-        applicationId 'com.mgachanja.arpella'
-        minSdkVersion rootProject.ext.minSdkVersion
-        targetSdkVersion rootProject.ext.targetSdkVersion
+        applicationId "com.mgachanja.arpella"
+        minSdkVersion rootProject.ext.minSdkVersion as Integer
+        targetSdkVersion rootProject.ext.targetSdkVersion as Integer
         versionCode 2
         versionName "1.0.1"
 
