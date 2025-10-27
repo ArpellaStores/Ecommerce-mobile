@@ -27,6 +27,9 @@ export default ({ config }) => ({
       fallbackToCacheTimeout: 0
     },
 
+    // Add this to disable Hermes globally
+    jsEngine: "jsc",
+
     android: {
       package: "com.mgachanja.arpella",
       versionCode: 2,
@@ -52,6 +55,8 @@ export default ({ config }) => ({
       supportsTablet: true,
       bundleIdentifier: "com.mgachanja.arpella",
       buildNumber: "2",
+      // Add this to disable Hermes on iOS
+      jsEngine: "jsc",
       infoPlist: {
         NSAppTransportSecurity: {
           NSAllowsArbitraryLoads: true
