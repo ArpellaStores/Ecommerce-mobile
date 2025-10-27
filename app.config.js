@@ -1,4 +1,4 @@
-
+// app.config.js
 export default ({ config }) => ({
   expo: {
     name: "Arpella",
@@ -72,6 +72,8 @@ export default ({ config }) => ({
     },
 
     plugins: [
+      // ensure expo-updates runs first so native files are configured
+      "expo-updates",
       "expo-router",
       [
         "expo-splash-screen",
