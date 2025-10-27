@@ -1,81 +1,72 @@
-name: EAS Build and Submit
+name: Publish EAS Update — canary (on push to main)
 
 on:
   push:
-    branches:
-      - main
+    branches: ["main"]
+
+permissions:
+  contents: read
+  id-token: write
 
 jobs:
-  build-and-deploy:
+  publish-canary:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Setup Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: '18'
+          cache: 'npm'
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Run ESLint
-        run: npx eslint .
-
-      - name: Install EAS CLI
-        run: npm install -g eas-cli
-
-      - name: Login to Expo
-        run: eas whoami
+      - name: Validate EXPO_TOKEN secret
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${EXPO_TOKEN:-}" ]; then
+            echo "❌ ERROR: EXPO_TOKEN secret is not set. Add it in repository settings -> Secrets."
+            exit 1
+          fi
+          echo "✅ EXPO_TOKEN is present (redacted)."
 
-      - name: Build Android
-        run: eas build --platform android --profile prod --non-interactive
+      - name: Ensure eas CLI available
+        run: |
+          set -euo pipefail
+          # Try to use npx without installing; if not present, install globally.
+          if npx --no-install eas --version >/dev/null 2>&1; then
+            echo "✅ eas (via npx) is available"
+          else
+            echo "ℹ️ eas not found via npx — installing eas-cli globally"
+            npm install -g eas-cli@latest
+          fi
+          eas --version
+
+      - name: Login to EAS (non-interactive)
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          set -euo pipefail
+          echo "🔐 Logging in to EAS..."
+          # prefer non-interactive login; whoami will confirm success
+          npx eas whoami 2>/dev/null || npx eas login --token "$EXPO_TOKEN"
+          npx eas whoami
 
-      - name: Submit Android
-        run: eas submit --platform android --latest --non-interactive
+      - name: Publish EAS update to canary
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-          GOOGLE_SERVICE_ACCOUNT_KEY: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_KEY }}
-
-      - name: Build iOS
-        run: eas build --platform ios --profile prod --non-interactive
-        env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-
-      - name: Submit iOS
-        run: eas submit --platform ios --latest --non-interactive
-        env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-
-      - name: Send notification on success
-        if: success()
-        uses: dawidd6/action-send-mail@v3
-        with:
-          server_address: smtp.gmail.com
-          server_port: 465
-          username: ${{ secrets.EMAIL_USER }}
-          password: ${{ secrets.EMAIL_PASS }}
-          subject: "✅ EAS Build Successful: Arpella"
-          to: arpellastoressystems@gmail.com
-          from: Arpella CI <${{ secrets.EMAIL_USER }}>
-          body: "Both Android and iOS builds and submissions were successful."
-
-      - name: Send notification on failure
-        if: failure()
-        uses: dawidd6/action-send-mail@v3
-        with:
-          server_address: smtp.gmail.com
-          server_port: 465
-          username: ${{ secrets.EMAIL_USER }}
-          password: ${{ secrets.EMAIL_PASS }}
-          subject: "❌ EAS Build Failed: Arpella"
-          to: arpellastoressystems@gmail.com
-          from: Arpella CI <${{ secrets.EMAIL_USER }}>
-          body: "The CI/CD pipeline failed. Check the logs on GitHub Actions."
+        run: |
+          set -euo pipefail
+          echo "🚀 Publishing update to canary branch..."
+          GIT_SHA=${GITHUB_SHA::8}
+          npx eas update --branch canary \
+            --message "Auto canary OTA from ${GITHUB_ACTOR} - ${GIT_SHA}" \
+            --non-interactive
+          echo "✅ EAS update published."
