@@ -11,6 +11,7 @@ import {
   ScrollView,
   Platform,
   ActivityIndicator,
+  Modal,
 } from 'react-native';
 import { useForm, Controller } from 'react-hook-form';
 import FontAwesome from 'react-native-vector-icons/FontAwesome';
@@ -19,8 +20,9 @@ import { useDispatch, useSelector } from 'react-redux';
 import { useToast } from 'react-native-toast-notifications';
 import logo from '../assets/images/logo.jpeg';
 import { loginUser } from '../redux/slices/authSlice';
+import axios from 'axios';
+import { baseUrl } from '../constants/const.js';
 
-// Import our shared SecureStore helpers
 import {
   saveCredentials,
   loadCredentials,
@@ -33,7 +35,6 @@ const Login = () => {
   const toast = useToast();
   const { isAuthenticated, isLoading } = useSelector((s) => s.auth);
 
-  // default phone set to 254 per requirement
   const { control, handleSubmit, setValue, formState: { errors } } = useForm({
     defaultValues: { phone: '254' },
   });
@@ -44,7 +45,16 @@ const Login = () => {
   const [autoLoginAttempted, setAutoLoginAttempted] = useState(false);
   const [manualLoginPressed, setManualLoginPressed] = useState(false);
 
-  // Password validator: at least one uppercase, one lowercase, one digit, one special char, min 8 chars
+  const [forgotPasswordModal, setForgotPasswordModal] = useState(false);
+  const [forgotStep, setForgotStep] = useState(1);
+  const [forgotPhone, setForgotPhone] = useState('254');
+  const [forgotOtp, setForgotOtp] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [forgotLoading, setForgotLoading] = useState(false);
+  const [newPasswordVisible, setNewPasswordVisible] = useState(false);
+  const [confirmPasswordVisible, setConfirmPasswordVisible] = useState(false);
+
   const validatePassword = (value) => {
     if (!value) return 'Password required';
     const pattern = /^(?=.*[A-Z])(?=.*[a-z])(?=.*\d)(?=.*[^\w\s]).{8,}$/;
@@ -52,13 +62,11 @@ const Login = () => {
       || 'Password must include uppercase, lowercase, number, special char (e.g., .,@,#), and be ≥8 chars';
   };
 
-  /** Load saved credentials & remember flag on mount **/
   useEffect(() => {
     (async () => {
       try {
         const { phone, pass, rememberMe: rem } = await loadCredentials();
         if (rem && phone) {
-          // if a phone exists but doesn't start with 254, normalize it to start with 254
           const normalized = (phone || '').replace(/\D/g, '');
           if (normalized && !normalized.startsWith('254')) {
             setValue('phone', '254' + normalized.replace(/^0+/, ''));
@@ -76,9 +84,7 @@ const Login = () => {
     })();
   }, [setValue]);
 
-  /** Helper function to extract user-friendly error messages **/
   const getErrorMessage = (error) => {
-    // Check for common login error patterns and return user-friendly messages
     if (!error) return 'Login failed. Please try again.';
     
     let message = '';
@@ -95,7 +101,6 @@ const Login = () => {
       message = 'Login failed. Please try again.';
     }
 
-    // Clean up technical error messages for better user experience
     if (message.includes('Request failed with status code 400')) {
       return 'Invalid phone number or password. Please check your credentials.';
     } else if (message.includes('Request failed with status code 401')) {
@@ -113,26 +118,27 @@ const Login = () => {
     return message;
   };
 
-  /** Manual login **/
   const onSubmit = async (data) => {
     if (isProcessing) return;
     setManualLoginPressed(true);
     setIsProcessing(true);
-
+  
     try {
       const result = await dispatch(
         loginUser({ phoneNumber: data.phone, passwordHash: data.password })
       );
-
+  
       if (loginUser.fulfilled.match(result)) {
         toast.show('Login successful!', { type: 'success' });
-
+  
         if (rememberMe) {
+          // Get the token from the result payload
+          const token = result.payload?.token || '';
+          
           await saveCredentials({
-            token: result.payload,
-            phone: data.phone,
-            pass: data.password,
-            rememberMe,
+            token: String(token),
+            phone: String(data.phone),
+            pass: String(data.password),
           });
         } else {
           await clearCredentials();
@@ -150,7 +156,6 @@ const Login = () => {
     }
   };
 
-  /** Redirect when authenticated **/
   useEffect(() => {
     if (isAuthenticated) {
       const delay = Platform.OS === 'ios' ? 300 : 0;
@@ -158,7 +163,6 @@ const Login = () => {
     }
   }, [isAuthenticated, router]);
 
-  /** Auto-login effect: only if rememberMe flag is true **/
   useEffect(() => {
     const performAutoLogin = async () => {
       if (autoLoginAttempted || isAuthenticated || manualLoginPressed) return;
@@ -182,7 +186,6 @@ const Login = () => {
         } else {
           const errorMessage = getErrorMessage(result.payload || result.error);
           toast.show(errorMessage, { type: 'danger' });
-          // Clear saved credentials if auto-login fails
           await clearCredentials();
           setRememberMe(false);
         }
@@ -190,7 +193,6 @@ const Login = () => {
         console.error('Auto-login error:', e);
         const errorMessage = getErrorMessage(e);
         toast.show(errorMessage, { type: 'danger' });
-        // Clear saved credentials if auto-login fails
         await clearCredentials();
         setRememberMe(false);
       } finally {
@@ -211,6 +213,130 @@ const Login = () => {
     toast,
   ]);
 
+  const openForgotPasswordModal = () => {
+    setForgotPasswordModal(true);
+    setForgotStep(1);
+    setForgotPhone('254');
+    setForgotOtp('');
+    setNewPassword('');
+    setConfirmPassword('');
+  };
+
+  const closeForgotPasswordModal = () => {
+    setForgotPasswordModal(false);
+    setForgotStep(1);
+    setForgotPhone('254');
+    setForgotOtp('');
+    setNewPassword('');
+    setConfirmPassword('');
+  };
+
+  const handleSendOtp = async () => {
+    const phonePattern = /^254\d{9}$/;
+    if (!phonePattern.test(forgotPhone)) {
+      toast.show('Please enter a valid phone number (254XXXXXXXXX)', { type: 'danger' });
+      return;
+    }
+
+    setForgotLoading(true);
+    try {
+      const response = await axios.get(`${baseUrl}/send-otp?username=${forgotPhone}`, {
+        timeout: 15000,
+      });
+
+      if (response.status === 200) {
+        toast.show('OTP sent to your phone number', { type: 'success' });
+        setForgotStep(2);
+      } else {
+        toast.show('Failed to send OTP. Please try again.', { type: 'danger' });
+      }
+    } catch (error) {
+      const message = error.response?.data?.message || error.message || 'Failed to send OTP';
+      toast.show(message, { type: 'danger' });
+    } finally {
+      setForgotLoading(false);
+    }
+  };
+
+  const handleVerifyOtp = async () => {
+    if (!forgotOtp || forgotOtp.length < 4) {
+      toast.show('Please enter the OTP sent to your phone', { type: 'danger' });
+      return;
+    }
+
+    setForgotLoading(true);
+    try {
+      const response = await axios.get(
+        `${baseUrl}/send-otp?username=${forgotPhone}&otp=${forgotOtp}`,
+        { timeout: 15000 }
+      );
+
+      if (response.status === 200) {
+        toast.show('OTP verified successfully', { type: 'success' });
+        setForgotStep(3);
+      } else {
+        toast.show('Invalid OTP. Please try again.', { type: 'danger' });
+      }
+    } catch (error) {
+      const message = error.response?.data?.message || error.message || 'Invalid OTP';
+      toast.show(message, { type: 'danger' });
+    } finally {
+      setForgotLoading(false);
+    }
+  };
+
+  const handleResetPassword = async () => {
+    const passwordPattern = /^(?=.*[A-Z])(?=.*[a-z])(?=.*\d)(?=.*[^\w\s]).{8,}$/;
+
+    if (!passwordPattern.test(newPassword)) {
+      toast.show(
+        'Password must be at least 8 characters with uppercase, lowercase, number, and special character (e.g., .,@,#)',
+        { type: 'danger' }
+      );
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      toast.show('Passwords do not match', { type: 'danger' });
+      return;
+    }
+
+    setForgotLoading(true);
+    try {
+      const response = await axios.put(
+        `${baseUrl}/user-details/${forgotPhone}`,
+        { passwordHash: newPassword },
+        {
+          headers: { 'Content-Type': 'application/json' },
+          timeout: 15000,
+        }
+      );
+
+      if (response.status === 200) {
+        toast.show('Password reset successful! Please login with your new password.', {
+          type: 'success',
+        });
+        closeForgotPasswordModal();
+      } else {
+        toast.show('Failed to reset password. Please try again.', { type: 'danger' });
+      }
+    } catch (error) {
+      const message = error.response?.data?.message || error.message || 'Failed to reset password';
+      toast.show(message, { type: 'danger' });
+    } finally {
+      setForgotLoading(false);
+    }
+  };
+
+  const normalizeForgotPhone = (text) => {
+    let cleaned = (text || '').replace(/\D/g, '');
+    if (!cleaned.startsWith('254')) {
+      cleaned = '254' + cleaned.replace(/^254/, '').replace(/^0+/, '');
+    }
+    if (cleaned.length > 12) cleaned = cleaned.slice(0, 12);
+    return cleaned;
+  };
+
   return (
     <ScrollView contentContainerStyle={styles.container}>
       <View style={styles.headerContainer}>
@@ -221,23 +347,19 @@ const Login = () => {
       <View style={styles.formContainer}>
         <Text style={styles.formTitle}>Login to Your Account</Text>
 
-        {/* Phone */}
         <Controller
           control={control}
           name="phone"
           rules={{
             required: 'Phone required',
             pattern: {
-              // enforce 254 + 9 digits
               value: /^254\d{9}$/,
               message: 'Phone must start with 254 followed by 9 digits (e.g., 254712345678)',
             },
           }}
           render={({ field: { onChange, onBlur, value }, fieldState: { error } }) => {
             const handlePhoneChange = (text) => {
-              // strip non-digits
               let cleaned = (text || '').replace(/\D/g, '');
-              // ensure it starts with 254
               if (!cleaned.startsWith('254')) {
                 cleaned = '254' + cleaned.replace(/^254/, '').replace(/^0+/, '');
               }
@@ -263,7 +385,6 @@ const Login = () => {
           }}
         />
 
-        {/* Password */}
         <Controller
           control={control}
           name="password"
@@ -298,7 +419,6 @@ const Login = () => {
           )}
         />
 
-        {/* Remember Me */}
         <TouchableOpacity
           style={styles.rememberMeContainer}
           onPress={() => setRememberMe((v) => !v)}
@@ -314,7 +434,6 @@ const Login = () => {
           </Text>
         </TouchableOpacity>
 
-        {/* Submit */}
         <TouchableOpacity
           style={[styles.button, (isProcessing || isLoading) && styles.buttonDisabled]}
           onPress={handleSubmit(onSubmit)}
@@ -329,9 +448,16 @@ const Login = () => {
             <Text style={styles.buttonText}>Login</Text>
           )}
         </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.forgotButton, (isProcessing || isLoading) && styles.buttonDisabled]}
+          onPress={openForgotPasswordModal}
+          disabled={isProcessing || isLoading}
+        >
+          <Text style={styles.forgotButtonText}>Forgot Password?</Text>
+        </TouchableOpacity>
       </View>
 
-      {/* Loading Overlay */}
       {(isProcessing || isLoading) && (
         <View style={styles.backdrop}>
           <View style={styles.loadingContainer}>
@@ -341,7 +467,6 @@ const Login = () => {
         </View>
       )}
 
-      {/* Social & Register */}
       <View style={styles.socialButtons}>
         <TouchableOpacity
           onPress={() => router.replace('/')}
@@ -366,6 +491,141 @@ const Login = () => {
           <Text style={styles.socialButtonText}>Login with Facebook</Text>
         </TouchableOpacity>
       </View>
+
+      <Modal
+        visible={forgotPasswordModal}
+        animationType="slide"
+        transparent
+        onRequestClose={closeForgotPasswordModal}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <TouchableOpacity style={styles.modalCloseButton} onPress={closeForgotPasswordModal}>
+              <FontAwesome name="close" size={24} color="#333" />
+            </TouchableOpacity>
+
+            <Text style={styles.modalTitle}>Forgot Password</Text>
+
+            {forgotStep === 1 && (
+              <View style={styles.modalBody}>
+                <Text style={styles.modalLabel}>Enter your phone number</Text>
+                <TextInput
+                  style={styles.modalInput}
+                  placeholder="254712345678"
+                  keyboardType="numeric"
+                  value={forgotPhone}
+                  onChangeText={(text) => setForgotPhone(normalizeForgotPhone(text))}
+                  maxLength={12}
+                  editable={!forgotLoading}
+                />
+                <TouchableOpacity
+                  style={[styles.modalButton, forgotLoading && styles.buttonDisabled]}
+                  onPress={handleSendOtp}
+                  disabled={forgotLoading}
+                >
+                  {forgotLoading ? (
+                    <ActivityIndicator size="small" color="#FFF" />
+                  ) : (
+                    <Text style={styles.modalButtonText}>Send OTP</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {forgotStep === 2 && (
+              <View style={styles.modalBody}>
+                <Text style={styles.modalLabel}>Enter the OTP sent to {forgotPhone}</Text>
+                <TextInput
+                  style={styles.modalInput}
+                  placeholder="Enter OTP"
+                  keyboardType="numeric"
+                  value={forgotOtp}
+                  onChangeText={setForgotOtp}
+                  maxLength={6}
+                  editable={!forgotLoading}
+                />
+                <TouchableOpacity
+                  style={[styles.modalButton, forgotLoading && styles.buttonDisabled]}
+                  onPress={handleVerifyOtp}
+                  disabled={forgotLoading}
+                >
+                  {forgotLoading ? (
+                    <ActivityIndicator size="small" color="#FFF" />
+                  ) : (
+                    <Text style={styles.modalButtonText}>Verify OTP</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {forgotStep === 3 && (
+              <ScrollView style={styles.modalBody}>
+                <Text style={styles.modalLabel}>Enter new password</Text>
+                <View style={styles.passwordContainer}>
+                  <TextInput
+                    style={styles.passwordInput}
+                    placeholder="New Password"
+                    secureTextEntry={!newPasswordVisible}
+                    value={newPassword}
+                    onChangeText={setNewPassword}
+                    editable={!forgotLoading}
+                  />
+                  <TouchableOpacity
+                    onPress={() => setNewPasswordVisible((v) => !v)}
+                    style={styles.eyeIcon}
+                    disabled={forgotLoading}
+                  >
+                    <FontAwesome
+                      name={newPasswordVisible ? 'eye-slash' : 'eye'}
+                      size={20}
+                      color="#777"
+                    />
+                  </TouchableOpacity>
+                </View>
+
+                <Text style={[styles.modalLabel, { marginTop: 15 }]}>Confirm new password</Text>
+                <View style={styles.passwordContainer}>
+                  <TextInput
+                    style={styles.passwordInput}
+                    placeholder="Confirm Password"
+                    secureTextEntry={!confirmPasswordVisible}
+                    value={confirmPassword}
+                    onChangeText={setConfirmPassword}
+                    editable={!forgotLoading}
+                  />
+                  <TouchableOpacity
+                    onPress={() => setConfirmPasswordVisible((v) => !v)}
+                    style={styles.eyeIcon}
+                    disabled={forgotLoading}
+                  >
+                    <FontAwesome
+                      name={confirmPasswordVisible ? 'eye-slash' : 'eye'}
+                      size={20}
+                      color="#777"
+                    />
+                  </TouchableOpacity>
+                </View>
+
+                <Text style={styles.passwordRequirement}>
+                  Password must be at least 8 characters with uppercase, lowercase, number, and special character (e.g., .,@,#)
+                </Text>
+
+                <TouchableOpacity
+                  style={[styles.modalButton, forgotLoading && styles.buttonDisabled]}
+                  onPress={handleResetPassword}
+                  disabled={forgotLoading}
+                >
+                  {forgotLoading ? (
+                    <ActivityIndicator size="small" color="#FFF" />
+                  ) : (
+                    <Text style={styles.modalButtonText}>Reset Password</Text>
+                  )}
+                </TouchableOpacity>
+              </ScrollView>
+            )}
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 };
@@ -485,6 +745,18 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     marginLeft: 8,
   },
+  forgotButton: {
+    backgroundColor: '#4B2C20',
+    paddingVertical: 14,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginTop: 5,
+  },
+  forgotButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
   backdrop: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(0,0,0,0.5)',
@@ -538,7 +810,71 @@ const styles = StyleSheet.create({
     marginTop: 6,
     fontSize: 13,
   },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContent: {
+    width: '90%',
+    maxHeight: '80%',
+    backgroundColor: '#FFF8E1',
+    borderRadius: 10,
+    padding: 20,
+  },
+  modalCloseButton: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    padding: 5,
+    zIndex: 10,
+  },
+  modalTitle: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: '#4B2C20',
+    marginBottom: 20,
+    textAlign: 'center',
+    marginTop: 10,
+  },
+  modalBody: {
+    width: '100%',
+  },
+  modalLabel: {
+    fontSize: 15,
+    fontWeight: '500',
+    color: '#4B2C20',
+    marginBottom: 8,
+  },
+  modalInput: {
+    height: 48,
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    backgroundColor: '#fff',
+    fontSize: 16,
+    marginBottom: 20,
+  },
+  modalButton: {
+    backgroundColor: '#4B2C20',
+    paddingVertical: 14,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  modalButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  passwordRequirement: {
+    fontSize: 12,
+    color: '#666',
+    marginTop: 8,
+    marginBottom: 20,
+    lineHeight: 18,
+  },
 });
 
-// CRITICAL: Default export is required
 export default Login;

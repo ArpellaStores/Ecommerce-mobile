@@ -20,6 +20,15 @@ export default ({ config }) => ({
       "**/*"
     ],
 
+    // IMPORTANT: runtimeVersion controls which OTA updates apply to which native builds.
+    // We tie it to appVersion to avoid sending JS updates to mismatched native builds.
+    runtimeVersion: { policy: "appVersion" },
+
+    updates: {
+      // 0 = immediately fallback to cached bundle timeout; adjust as needed
+      fallbackToCacheTimeout: 0
+    },
+
     android: {
       package: "com.mgachanja.arpella",
       versionCode: 2,
@@ -36,7 +45,6 @@ export default ({ config }) => ({
       ],
       config: {
         googleMaps: {
-          // Fallback to process.env if provided by EAS; hardcoded key is present per request
           apiKey: process.env.GOOGLE_MAPS_API_KEY || "AIzaSyD-YPpUWHXNzvQjjXjqj7mvO2Idi72jREc"
         }
       }

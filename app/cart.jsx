@@ -15,19 +15,12 @@ import {
   Image,
 } from 'react-native';
 import { useDispatch, useSelector } from 'react-redux';
-import { clearCart } from '../redux/slices/cartSlice';
+import { clearCart, updateItemQuantity, removeItemFromCart } from '../redux/slices/cartSlice';
 import FontAwesome from 'react-native-vector-icons/FontAwesome';
 import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
 import axios from 'axios';
 import { baseUrl } from '../constants/const.js';
-
-/**
- * Checkout Screen
- * - Sends orderItems with priceType and unitPrice.
- * - Logs payload and server response/error.
- * - Shows applied discounted price in the UI (cart list + checkout summary + totals).
- */
 
 const Checkout = () => {
   const dispatch = useDispatch();
@@ -39,6 +32,8 @@ const Checkout = () => {
   const [loading, setLoading] = useState(false);
   const [locationLoading, setLocationLoading] = useState(false);
   const [showModal, setShowModal] = useState(false);
+  const [editModalVisible, setEditModalVisible] = useState(false);
+  const [selectedItem, setSelectedItem] = useState(null);
 
   const [mpesaNumber, setMpesaNumber] = useState(userPhone || '254');
   const [mpesaError, setMpesaError] = useState('');
@@ -57,7 +52,6 @@ const Checkout = () => {
     })();
   }, []);
 
-  /** Fetch current GPS coordinates **/
   const getCurrentLocation = async () => {
     setLocationLoading(true);
     try {
@@ -82,23 +76,15 @@ const Checkout = () => {
     }
   };
 
-  /** Lookup product details by ID **/
   const getProductById = (id) =>
     products.find((p) => p.id === parseInt(id, 10)) || {};
 
-  /**
-   * Build fusedItems (product object merged with cart quantity and id)
-   * Mirrors web version so discount logic is identical.
-   */
   const buildFusedItems = () =>
     Object.entries(cartItems).map(([id, item]) => {
       const product = getProductById(id);
       return { ...product, quantity: item.quantity, id: product.id ?? Number(id) };
     });
 
-  /**
-   * Create orderItems for payload with priceType and unitPrice (numbers).
-   */
   const buildOrderItems = (fusedItems) =>
     fusedItems.map((i) => {
       const qty = Number(i.quantity || 0);
@@ -115,9 +101,6 @@ const Checkout = () => {
       };
     });
 
-  /**
-   * Total calculation uses unitPrice with discount logic so UI matches payload.
-   */
   const calculateTotal = () => {
     const fused = buildFusedItems();
     return fused.reduce((acc, item) => {
@@ -130,7 +113,6 @@ const Checkout = () => {
     }, 0);
   };
 
-  // --- M-Pesa helpers ---
   const normalizeMpesaInput = (raw) => {
     if (!raw) return '';
     let digits = raw.replace(/\D/g, '');
@@ -161,7 +143,6 @@ const Checkout = () => {
     setMpesaError('');
   };
 
-  /** Submit the order **/
   const submitOrder = async () => {
     if (!mpesaNumber) {
       Alert.alert('Missing Information', 'M-Pesa payment number is required');
@@ -184,7 +165,6 @@ const Checkout = () => {
     setLoading(true);
 
     try {
-      // Resolve coordinates (prefer existing)
       let coords = location;
       if (!coords) {
         try {
@@ -195,7 +175,7 @@ const Checkout = () => {
           });
           coords = { latitude: loc.coords.latitude, longitude: loc.coords.longitude };
         } catch {
-          coords = { latitude: -1.28333, longitude: 36.81667 }; // Nairobi CBD fallback
+          coords = { latitude: -1.28333, longitude: 36.81667 };
         }
       }
 
@@ -206,20 +186,13 @@ const Checkout = () => {
         buyerPin: buyerPin || 'N/A',
         latitude: Number(coords.latitude),
         longitude: Number(coords.longitude),
-        orderItems, // productId:Number, quantity:Number, priceType:String, unitPrice:Number
+        orderItems,
       };
-
-      // Debug logging: payload
-      console.log('Order payload (mpesa):', JSON.stringify(payload, null, 2));
 
       const response = await axios.post(`${baseUrl}/order`, payload, {
         headers: { 'Content-Type': 'application/json' },
         timeout: 20000,
       });
-
-      // Log server success
-      console.log('Order response status:', response.status);
-      console.log('Order response data:', response.data);
 
       if (response.status >= 200 && response.status < 300) {
         setPaymentSuccess(true);
@@ -230,12 +203,6 @@ const Checkout = () => {
         setShowModal(false);
       }
     } catch (err) {
-      // Detailed error logging
-      console.error('Order submission error:', {
-        message: err.message,
-        status: err?.response?.status,
-        data: err?.response?.data,
-      });
       const serverMessage = err?.response?.data?.message || err?.response?.data || err?.message;
       Alert.alert('Order Error', serverMessage || 'Could not connect to server. Please try again.');
       setShowModal(false);
@@ -260,13 +227,72 @@ const Checkout = () => {
     setPaymentSuccess(false);
   };
 
-  const handleUserConfirmedPayment = () => {
-    setPaymentSuccess(false);
-    setShowModal(false);
-    router.replace('./Package');
+  const handleClearCart = () => {
+    Alert.alert(
+      'Clear Cart',
+      'Are you sure you want to remove all items from your cart?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Clear',
+          style: 'destructive',
+          onPress: () => dispatch(clearCart()),
+        },
+      ]
+    );
   };
 
-  // Render helpers
+  const openEditModal = (item) => {
+    setSelectedItem(item);
+    setEditModalVisible(true);
+  };
+
+  const closeEditModal = () => {
+    setEditModalVisible(false);
+    setSelectedItem(null);
+  };
+
+  const handleUpdateQuantity = (newQty) => {
+    if (newQty < 1) {
+      Alert.alert(
+        'Remove Item',
+        'Do you want to remove this item from cart?',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Remove',
+            style: 'destructive',
+            onPress: () => {
+              dispatch(removeItemFromCart({ productId: selectedItem.id }));
+              closeEditModal();
+            },
+          },
+        ]
+      );
+      return;
+    }
+    dispatch(updateItemQuantity({ productId: selectedItem.id, quantity: newQty }));
+    setSelectedItem({ ...selectedItem, quantity: newQty });
+  };
+
+  const handleRemoveItem = () => {
+    Alert.alert(
+      'Remove Item',
+      'Are you sure you want to remove this item from your cart?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove',
+          style: 'destructive',
+          onPress: () => {
+            dispatch(removeItemFromCart({ productId: selectedItem.id }));
+            closeEditModal();
+          },
+        },
+      ]
+    );
+  };
+
   const fusedForRender = buildFusedItems();
   const total = calculateTotal();
 
@@ -274,6 +300,11 @@ const Checkout = () => {
     <View style={styles.container}>
       <View style={styles.headerRow}>
         <Text style={styles.cartTitle}>Shopping Cart</Text>
+        {fusedForRender.length > 0 && (
+          <TouchableOpacity onPress={handleClearCart}>
+            <Text style={styles.clearCartText}>Clear All</Text>
+          </TouchableOpacity>
+        )}
       </View>
 
       {fusedForRender.length === 0 ? (
@@ -296,7 +327,11 @@ const Checkout = () => {
               const discounted = item.priceAfterDiscount != null ? parseFloat(item.priceAfterDiscount) : null;
               const unitPrice = discounted !== null && qty >= discountThreshold ? discounted : basePrice;
               return (
-                <View style={styles.cartItem}>
+                <TouchableOpacity 
+                  style={styles.cartItem}
+                  onPress={() => openEditModal(item)}
+                  activeOpacity={0.7}
+                >
                   <View style={styles.cartItemRow}>
                     <Image
                       source={{
@@ -317,8 +352,9 @@ const Checkout = () => {
                         </Text>
                       </View>
                     </View>
+                    <FontAwesome name="edit" size={20} color="#5a2428" />
                   </View>
-                </View>
+                </TouchableOpacity>
               );
             }}
           />
@@ -331,6 +367,68 @@ const Checkout = () => {
           </View>
         </>
       )}
+
+      {/* Edit Item Modal */}
+      <Modal
+        visible={editModalVisible}
+        animationType="slide"
+        transparent
+        onRequestClose={closeEditModal}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.editModalContent}>
+            <TouchableOpacity style={styles.closeButton} onPress={closeEditModal}>
+              <FontAwesome name="close" size={24} color="#333" />
+            </TouchableOpacity>
+
+            {selectedItem && (
+              <>
+                <Text style={styles.editModalTitle}>Edit Item</Text>
+                
+                <Image
+                  source={{
+                    uri:
+                      selectedItem.productimages?.[0]?.imageUrl ||
+                      selectedItem.imageUrl ||
+                      'https://via.placeholder.com/150',
+                  }}
+                  style={styles.editItemImage}
+                />
+
+                <Text style={styles.editItemName}>{selectedItem.name || 'Product'}</Text>
+
+                <View style={styles.quantityContainer}>
+                  <Text style={styles.quantityLabel}>Quantity:</Text>
+                  <View style={styles.quantityControls}>
+                    <TouchableOpacity
+                      style={styles.quantityButton}
+                      onPress={() => handleUpdateQuantity(selectedItem.quantity - 1)}
+                    >
+                      <Text style={styles.quantityButtonText}>-</Text>
+                    </TouchableOpacity>
+                    <Text style={styles.quantityValue}>{selectedItem.quantity}</Text>
+                    <TouchableOpacity
+                      style={styles.quantityButton}
+                      onPress={() => handleUpdateQuantity(selectedItem.quantity + 1)}
+                    >
+                      <Text style={styles.quantityButtonText}>+</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+
+                <TouchableOpacity style={styles.removeButton} onPress={handleRemoveItem}>
+                  <FontAwesome name="trash" size={16} color="#fff" />
+                  <Text style={styles.removeButtonText}>Remove from Cart</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity style={styles.doneButton} onPress={closeEditModal}>
+                  <Text style={styles.doneButtonText}>Done</Text>
+                </TouchableOpacity>
+              </>
+            )}
+          </View>
+        </View>
+      </Modal>
 
       {/* Checkout Modal */}
       <Modal
@@ -347,22 +445,22 @@ const Checkout = () => {
 
             {paymentSuccess ? (
               <View style={styles.successContainer}>
-                <FontAwesome name="info-circle" size={56} color="#1976d2" />
-                <Text style={styles.successTitle}>Finish payment via M-Pesa</Text>
-                <View style={styles.btnRow}>
-                  <TouchableOpacity style={styles.secondaryButton} onPress={handleUserConfirmedPayment}>
-                    <Text style={styles.secondaryButtonText}>I've Paid</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.secondaryButton} onPress={closeCheckoutModal}>
-                    <Text style={styles.secondaryButtonText}>Close</Text>
-                  </TouchableOpacity>
-                </View>
+                <FontAwesome name="check-circle" size={56} color="#4caf50" />
+                <Text style={styles.successTitle}>Payment Request Sent!</Text>
+                <Text style={styles.successMessage}>
+                  Check your phone for the M-Pesa prompt and complete the payment.
+                </Text>
+                <Text style={styles.successNote}>
+                  Orders will be automatically created when payment is received on our end.
+                </Text>
+                <TouchableOpacity style={styles.secondaryButton} onPress={closeCheckoutModal}>
+                  <Text style={styles.secondaryButtonText}>Close</Text>
+                </TouchableOpacity>
               </View>
             ) : (
               <ScrollView style={styles.modalScroll}>
                 <Text style={styles.modalTitle}>Checkout</Text>
 
-                {/* Order Summary Table */}
                 <View style={styles.summaryTable}>
                   <View style={styles.tableHeader}>
                     <Text style={styles.tableHeaderCell}>Image</Text>
@@ -405,7 +503,6 @@ const Checkout = () => {
                   </View>
                 </View>
 
-                {/* Payment Form */}
                 <Text style={styles.inputLabel}>M-Pesa Payment Number</Text>
                 <TextInput
                   style={[styles.input, mpesaError ? { borderColor: 'red' } : null]}
@@ -425,7 +522,6 @@ const Checkout = () => {
                   onChangeText={setBuyerPin}
                 />
 
-                {/* Delivery Location */}
                 <View style={styles.locationContainer}>
                   <Text style={styles.locationLabel}>Delivery Location:</Text>
                   <Text style={styles.locationText}>
@@ -463,7 +559,6 @@ const Checkout = () => {
         </View>
       </Modal>
 
-      {/* Processing Overlay */}
       <Modal visible={loading} transparent>
         <View style={styles.backdrop}>
           <ActivityIndicator size="large" color="#5a2428" />
@@ -471,7 +566,6 @@ const Checkout = () => {
         </View>
       </Modal>
 
-      {/* Bottom Navigation */}
       <View style={styles.bottomNavigation}>
         <TouchableOpacity style={styles.navItem} onPress={() => router.replace('./')}>
           <FontAwesome name="home" size={24} color="black" />
@@ -494,6 +588,7 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#FFF8E1', paddingHorizontal: 15, paddingTop: 30 },
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
   cartTitle: { fontSize: 24, fontWeight: 'bold' },
+  clearCartText: { color: '#d32f2f', fontSize: 14, fontWeight: 'bold' },
   emptyCartContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   emptyCartText: { fontSize: 18, color: '#888', marginVertical: 20 },
   continueShopping: { backgroundColor: '#5a2428', padding: 10, borderRadius: 5 },
@@ -511,9 +606,23 @@ const styles = StyleSheet.create({
   checkoutButtonText: { color: 'white', fontSize: 16, fontWeight: 'bold' },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' },
   modalContent: { width: '90%', maxHeight: '90%', backgroundColor: '#FFF8E1', borderRadius: 10, padding: 20 },
+  editModalContent: { width: '85%', backgroundColor: '#FFF8E1', borderRadius: 10, padding: 20 },
   modalScroll: { maxHeight: '100%' },
-  closeButton: { position: 'absolute', top: 10, right: 10, padding: 5 },
+  closeButton: { position: 'absolute', top: 10, right: 10, padding: 5, zIndex: 10 },
   modalTitle: { fontSize: 24, fontWeight: 'bold', textAlign: 'center', marginVertical: 20 },
+  editModalTitle: { fontSize: 20, fontWeight: 'bold', textAlign: 'center', marginBottom: 20, marginTop: 10 },
+  editItemImage: { width: 120, height: 120, borderRadius: 8, alignSelf: 'center', marginBottom: 15 },
+  editItemName: { fontSize: 18, fontWeight: 'bold', textAlign: 'center', marginBottom: 20 },
+  quantityContainer: { marginBottom: 20 },
+  quantityLabel: { fontSize: 16, fontWeight: 'bold', marginBottom: 10, textAlign: 'center' },
+  quantityControls: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center' },
+  quantityButton: { width: 50, height: 50, backgroundColor: '#5a2428', borderRadius: 8, justifyContent: 'center', alignItems: 'center', marginHorizontal: 15 },
+  quantityButtonText: { color: 'white', fontSize: 24, fontWeight: 'bold' },
+  quantityValue: { fontSize: 20, fontWeight: 'bold', minWidth: 40, textAlign: 'center' },
+  removeButton: { flexDirection: 'row', backgroundColor: '#d32f2f', padding: 15, borderRadius: 5, alignItems: 'center', justifyContent: 'center', marginBottom: 10 },
+  removeButtonText: { color: 'white', fontSize: 16, fontWeight: 'bold', marginLeft: 8 },
+  doneButton: { backgroundColor: '#5a2428', padding: 15, borderRadius: 5, alignItems: 'center' },
+  doneButtonText: { color: 'white', fontSize: 16, fontWeight: 'bold' },
   summaryTable: { marginBottom: 20, borderWidth: 1, borderColor: '#ddd', borderRadius: 5, overflow: 'hidden' },
   tableHeader: { flexDirection: 'row', backgroundColor: '#f0f0f0', padding: 10, borderBottomWidth: 1, borderBottomColor: '#ddd' },
   tableHeaderCell: { flex: 1, fontWeight: 'bold', textAlign: 'center' },
@@ -532,23 +641,17 @@ const styles = StyleSheet.create({
   locationButtonText: { color: 'white' },
   payButton: { backgroundColor: '#5a2428', padding: 15, borderRadius: 5, alignItems: 'center' },
   payButtonText: { color: 'white', fontSize: 16, fontWeight: 'bold' },
-  backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', alignItems: 'center' },
+  backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', alignItems: 'center' },
   backdropText: { color: 'white', marginTop: 10 },
-
-  successContainer: { alignItems: 'center', padding: 10 },
-  successTitle: { fontSize: 18, fontWeight: '700', color: '#222', marginTop: 12, textAlign: 'center' },
-  simpleLine: { marginTop: 8, fontSize: 15, color: '#333', textAlign: 'center' },
-
-  btnRow: { flexDirection: 'row', marginTop: 16, justifyContent: 'center', gap: 12 },
-  confirmButton: { backgroundColor: '#1976d2', paddingHorizontal: 18, paddingVertical: 12, borderRadius: 8, marginRight: 8 },
-  confirmButtonText: { color: '#fff', fontWeight: '700' },
-  secondaryButton: { backgroundColor: '#eee', paddingHorizontal: 18, paddingVertical: 12, borderRadius: 8 },
-  secondaryButtonText: { color: '#333' },
-
+  successContainer: { alignItems: 'center', padding: 20 },
+  successTitle: { fontSize: 20, fontWeight: 'bold', color: '#222', marginTop: 15, marginBottom: 10, textAlign: 'center' },
+  successMessage: { fontSize: 15, color: '#333', textAlign: 'center', marginBottom: 15, lineHeight: 22 },
+  successNote: { fontSize: 13, color: '#666', textAlign: 'center', marginBottom: 20, fontStyle: 'italic', lineHeight: 20 },
+  secondaryButton: { backgroundColor: '#5a2428', paddingHorizontal: 30, paddingVertical: 12, borderRadius: 8, marginTop: 10 },
+  secondaryButtonText: { color: '#fff', fontWeight: 'bold', fontSize: 16 },
   bottomNavigation: { flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center', height: 50, borderTopWidth: 1, borderTopColor: '#ccc', backgroundColor: '#FFF8E1' },
   navItem: { alignItems: 'center' },
-
-  errorText: { color: 'red', marginTop: 6, fontSize: 13 },
+  errorText: { color: 'red', marginTop: -10, marginBottom: 10, fontSize: 13 },
 });
 
 export default Checkout;

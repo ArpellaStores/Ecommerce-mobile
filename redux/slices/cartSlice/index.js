@@ -1,11 +1,9 @@
-// redux/slices/cartSlice.js
-
 import { createSlice } from '@reduxjs/toolkit';
 
 /**
  * Cart Slice
  * - Manages shopping cart items keyed by product ID
- * - Supports adding, removing, and clearing items
+ * - Supports adding, removing, updating, and clearing items
  */
 const cartSlice = createSlice({
   name: 'cart',
@@ -38,15 +36,44 @@ const cartSlice = createSlice({
     },
 
     /**
+     * updateItemQuantity
+     * - Updates the quantity of a specific product in the cart
+     * @param {object} state
+     * @param {object} action.payload { productId, quantity }
+     */
+    updateItemQuantity: (state, action) => {
+      const { productId, quantity } = action.payload;
+      
+      if (!productId) {
+        console.error('updateItemQuantity: Product ID is undefined');
+        return;
+      }
+
+      if (state.items[productId]) {
+        state.items[productId].quantity = quantity;
+      } else {
+        console.warn(`updateItemQuantity: Product ${productId} not found in cart`);
+      }
+    },
+
+    /**
      * removeItemFromCart
      * - Deletes the product entry by ID
      * @param {object} state
-     * @param {string|number} action.payload  The product ID to remove
+     * @param {object} action.payload { productId }
      */
     removeItemFromCart: (state, action) => {
-      const productId = action.payload;
+      const { productId } = action.payload;
+      
+      if (!productId) {
+        console.error('removeItemFromCart: Product ID is undefined');
+        return;
+      }
+
       if (state.items[productId]) {
         delete state.items[productId];
+      } else {
+        console.warn(`removeItemFromCart: Product ${productId} not found in cart`);
       }
     },
 
@@ -61,5 +88,5 @@ const cartSlice = createSlice({
   },
 });
 
-export const { addItemToCart, removeItemFromCart, clearCart } = cartSlice.actions;
+export const { addItemToCart, updateItemQuantity, removeItemFromCart, clearCart } = cartSlice.actions;
 export default cartSlice.reducer;
