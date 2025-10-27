@@ -14,7 +14,7 @@ jobs:
     timeout-minutes: 120
 
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -22,8 +22,8 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
-          cache: 'npm'
+          node-version: "18"
+          cache: "npm"
 
       - name: Install dependencies
         run: npm ci
@@ -50,19 +50,102 @@ jobs:
           fi
           eas --version
 
-      - name: Start EAS build (android) and wait for completion
+      - name: Start EAS build and wait
         id: eas_build
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        shell: bash
         run: |
           set -euo pipefail
 
-          # verify git working tree is clean
           if [ -n "$(git status --porcelain)" ]; then
             echo "ERROR: Git working tree is dirty. Commit or stash changes and retry."
             git status --porcelain
             exit 1
           fi
 
-          # ensure jq is available
-          if ! command -v jq >/dev/null
+          if ! command -v jq >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y jq
+          fi
+
+          TMP_OUTPUT="/tmp/eas-build-output.json"
+          rm -f "$TMP_OUTPUT"
+
+          npx eas build --platform android --profile preview --non-interactive --wait --json > "$TMP_OUTPUT"
+
+          if [ ! -s "$TMP_OUTPUT" ]; then
+            echo "ERROR: EAS CLI produced no output."
+            exit 1
+          fi
+
+          BUILD_ID=$(jq -r '.id // empty' "$TMP_OUTPUT")
+          ARTIFACT_URL=$(jq -r '.artifacts[0].url // empty' "$TMP_OUTPUT")
+
+          if [ -z "$BUILD_ID" ]; then
+            echo "ERROR: Could not determine EAS build id."
+            cat "$TMP_OUTPUT"
+            exit 1
+          fi
+
+          if [ -z "$ARTIFACT_URL" ]; then
+            echo "ERROR: No artifact URL found in EAS build output."
+            cat "$TMP_OUTPUT"
+            exit 1
+          fi
+
+          echo "build_id=$BUILD_ID" >> "$GITHUB_OUTPUT"
+          echo "artifact_url=$ARTIFACT_URL" >> "$GITHUB_OUTPUT"
+
+      - name: Download artifact
+        id: download_artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          ART_URL="${{ steps.eas_build.outputs.artifact_url }}"
+          if [ -z "$ART_URL" ]; then
+            echo "ERROR: artifact_url output is empty."
+            exit 1
+          fi
+
+          FILE_EXT="${ART_URL##*.}"
+          FILE_NAME="app-android.${FILE_EXT}"
+
+          curl -L --fail --retry 5 --retry-delay 2 -o "$FILE_NAME" "$ART_URL"
+
+          if [ ! -s "$FILE_NAME" ]; then
+            echo "ERROR: Downloaded artifact is empty."
+            exit 1
+          fi
+
+          echo "file_name=$FILE_NAME" >> "$GITHUB_OUTPUT"
+          ls -lh "$FILE_NAME"
+
+      - name: Upload artifact to Actions
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-build
+          path: ${{ steps.download_artifact.outputs.file_name }}
+
+      - name: Create GitHub release and attach asset
+        id: release
+        uses: ncipollo/release-action@v1
+        with:
+          tag: "eas-build-${{ steps.eas_build.outputs.build_id }}"
+          name: "EAS Build ${{ steps.eas_build.outputs.build_id }}"
+          body: |
+            Auto build from ${{ github.actor }} @ ${{ github.sha }}
+            EAS Build ID: ${{ steps.eas_build.outputs.build_id }}
+          draft: false
+          prerelease: true
+          files: ${{ steps.download_artifact.outputs.file_name }}
+
+      - name: Output release URL
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="eas-build-${{ steps.eas_build.outputs.build_id }}"
+          echo "release_tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "release_url=https://github.com/${{ github.repository }}/releases/tag/${TAG}"
+          echo "Release created: https://github.com/${{ github.repository }}/releases/tag/${TAG}"
