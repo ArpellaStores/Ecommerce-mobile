@@ -1,4 +1,4 @@
-package com.mgachanja.Arpella
+package com.mgachanja.arpella
 import expo.modules.splashscreen.SplashScreenManager
 
 import android.os.Build

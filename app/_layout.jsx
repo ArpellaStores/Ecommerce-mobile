@@ -1,4 +1,4 @@
-// app/_layout.js  (RootLayout WITHOUT restoreFromToken; includes OTA prompt)
+// app/_layout.js
 import React, { useEffect, useState, useRef } from 'react'
 import {
   SafeAreaView,
@@ -19,7 +19,6 @@ import * as SecureStore from 'expo-secure-store'
 import * as ScreenOrientation from 'expo-screen-orientation'
 import * as Updates from 'expo-updates'
 
-// helper: only enable update behavior in non-dev builds
 const canCheckForUpdates = () => {
   if (__DEV__) return false
   if (!Updates || !Updates.checkForUpdateAsync) return false
@@ -30,11 +29,9 @@ function AppContent() {
   const router = useRouter()
   const toast = useToast()
 
-  // Redux runtime auth state is used only after bootstrap (optional)
   const isAuthenticated = useSelector(s => s.auth?.isAuthenticated)
   const reduxLoading = useSelector(s => s.auth?.loading)
 
-  // local bootstrap: derive initialRoute from SecureStore token (simple presence check)
   const [isChecking, setIsChecking] = useState(true)
   const [initialRoute, setInitialRoute] = useState(null)
 
@@ -42,14 +39,10 @@ function AppContent() {
   const promptedUpdateIdRef = useRef(null)
   const checkingRef = useRef(false)
 
-  // 1) Unlock orientation (non-blocking)
   useEffect(() => {
-    ScreenOrientation.unlockAsync().catch(err =>
-      console.warn('unlock orientation failed', err)
-    )
+    ScreenOrientation.unlockAsync().catch(() => {})
   }, [])
 
-  // 2) Read token from SecureStore and set initialRoute (no server validation)
   useEffect(() => {
     let mounted = true
 
@@ -58,8 +51,7 @@ function AppContent() {
         const token = await SecureStore.getItemAsync('userToken')
         if (!mounted) return
         setInitialRoute(token ? 'Home' : 'Login')
-      } catch (err) {
-        console.error('Failed to read token from SecureStore', err)
+      } catch {
         if (mounted) setInitialRoute('Login')
       } finally {
         if (mounted) setIsChecking(false)
@@ -72,22 +64,17 @@ function AppContent() {
     }
   }, [])
 
-  // 3) Navigate once SecureStore check finishes.
-  //    This uses the token presence to decide initial navigation — intentional, simple behavior.
   useEffect(() => {
     if (isChecking || !initialRoute) return
 
-    // prefer runtime redux auth state if it's known (non-null); otherwise use initialRoute
     const effectiveAuth = typeof isAuthenticated === 'boolean' ? isAuthenticated : null
-
-    const target = effectiveAuth === null ? initialRoute : (effectiveAuth ? 'Home' : 'Login')
+    const target = effectiveAuth === null ? initialRoute : effectiveAuth ? 'Home' : 'Login'
     const currentPath = router.getPathname?.() || ''
     if (!currentPath.includes(`/${target}`)) {
       router.replace(`/${target}`)
     }
   }, [isChecking, initialRoute, isAuthenticated, router])
 
-  // 4) Update check + user prompt flow (download first, then prompt)
   useEffect(() => {
     if (!canCheckForUpdates()) return
 
@@ -103,13 +90,12 @@ function AppContent() {
 
         await Updates.fetchUpdateAsync()
 
-        // try to determine an identifier for this update to avoid re-prompting
         let updateId = null
         try {
           const pending = Updates.manifest || (await Updates.getPendingUpdateAsync()) || {}
           updateId = pending.id || pending.commitTime || pending.releaseId || null
-        } catch (e) {
-          // ignore
+        } catch {
+          // ignore manifest parsing errors
         }
 
         if (updateId && promptedUpdateIdRef.current === updateId) {
@@ -144,8 +130,7 @@ function AppContent() {
                   onPress: async () => {
                     try {
                       await Updates.reloadAsync()
-                    } catch (err) {
-                      console.error('Failed to reload after update', err)
+                    } catch {
                       toast.show('Failed to apply update; please restart the app', {
                         duration: 4000,
                       })
@@ -159,8 +144,7 @@ function AppContent() {
                   onPress: async () => {
                     try {
                       await Updates.reloadAsync()
-                    } catch (err) {
-                      console.error('Failed to reload after update', err)
+                    } catch {
                       toast.show('Failed to apply update; please restart the app', {
                         duration: 4000,
                       })
@@ -179,17 +163,13 @@ function AppContent() {
         setTimeout(() => {
           Alert.alert(title, message, buttons, { cancelable: true })
         }, 300)
-      } catch (err) {
-        console.error('Update check/fetch error', err)
       } finally {
         checkingRef.current = false
       }
     }
 
-    // initial check (show toast)
     checkAndPrompt(true)
 
-    // check when app returns to foreground (no toast)
     function handleAppStateChange(nextAppState) {
       if (appState.current.match(/inactive|background/) && nextAppState === 'active') {
         checkAndPrompt(false)
@@ -204,7 +184,6 @@ function AppContent() {
     }
   }, [toast])
 
-  // 5) Splash while checking SecureStore or while redux indicates loading
   if (isChecking || reduxLoading) {
     return (
       <SafeAreaView style={styles.fullScreen}>
@@ -217,7 +196,6 @@ function AppContent() {
     )
   }
 
-  // Normal app shell
   return (
     <SafeAreaView style={styles.fullScreen}>
       <StatusBar barStyle="dark-content" />
@@ -231,7 +209,6 @@ function AppContent() {
   )
 }
 
-// Top-level export with providers
 export default function RootLayout() {
   return (
     <Provider store={store}>
