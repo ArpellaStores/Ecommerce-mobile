@@ -1,4 +1,4 @@
-// src/screens/Index.js
+// Home.jsx
 import React, { useCallback, useEffect, useMemo, useRef, useState, memo } from 'react';
 import {
   View,
@@ -7,85 +7,86 @@ import {
   Image,
   TouchableOpacity,
   Modal,
-  StyleSheet,
   TextInput,
   ActivityIndicator,
-  Platform,
   useWindowDimensions,
+  StyleSheet,
 } from 'react-native';
 import { useDispatch, useSelector, shallowEqual } from 'react-redux';
 import { addItemToCart } from '../redux/slices/cartSlice';
 import { useRouter } from 'expo-router';
 import FontAwesome from 'react-native-vector-icons/FontAwesome';
 import { fetchProductsAndRelated, fetchProducts, fetchProductImage } from '../redux/slices/productsSlice';
-
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import * as Crypto from 'expo-crypto';
 
 const PLACEHOLDER = 'https://via.placeholder.com/150x150/f0f0f0/999999?text=No+Image';
 
-// Cache for file paths to avoid repeated MD5 calculations
-const pathCache = new Map();
+if (!global.__arpella_image_helpers__) {
+  global.__arpella_image_helpers__ = {};
+  global.__arpella_image_helpers__.pathCache = new Map();
 
-const getCachedFilePath = async (uri) => {
-  if (!uri) return null;
-  
-  if (pathCache.has(uri)) {
-    return pathCache.get(uri);
-  }
-  
-  const hash = await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.MD5, uri);
-  const extMatch = uri.match(/\.(png|jpg|jpeg|webp)(\?.*)?$/i);
-  const ext = extMatch ? extMatch[1] : 'jpg';
-  const dir = `${FileSystem.cacheDirectory}images/`;
-  const path = `${dir}${hash}.${ext}`;
-  
-  const result = { dir, path };
-  pathCache.set(uri, result);
-  return result;
-};
-
-const ensureImageCached = async (uri) => {
-  if (!uri) return null;
-  try {
-    const { dir, path } = await getCachedFilePath(uri);
-    const info = await FileSystem.getInfoAsync(path);
-    if (info.exists) {
-      return path;
+  global.__arpella_image_helpers__.getCachedFilePath = async (uri) => {
+    if (!uri) return null;
+    if (global.__arpella_image_helpers__.pathCache.has(uri)) {
+      return global.__arpella_image_helpers__.pathCache.get(uri);
     }
-    await FileSystem.makeDirectoryAsync(dir, { intermediates: true }).catch(() => {});
-    const res = await FileSystem.downloadAsync(uri, path);
-    if (res && (res.status === 200 || res.status === undefined)) {
-      return path;
-    }
-    await FileSystem.deleteAsync(path).catch(() => {});
-    return null;
-  } catch (e) {
-    return null;
-  }
-};
+    const hash = await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.MD5, uri);
+    const extMatch = uri.match(/\.(png|jpg|jpeg|webp)(\?.*)?$/i);
+    const ext = extMatch ? extMatch[1] : 'jpg';
+    const dir = `${FileSystem.cacheDirectory}images/`;
+    const path = `${dir}${hash}.${ext}`;
+    const result = { dir, path };
+    global.__arpella_image_helpers__.pathCache.set(uri, result);
+    return result;
+  };
 
-// Memoized ProductImage component with optimizations
+  global.__arpella_image_helpers__.ensureImageCached = async (uri) => {
+    if (!uri) return null;
+    try {
+      const { dir, path } = await global.__arpella_image_helpers__.getCachedFilePath(uri);
+      const info = await FileSystem.getInfoAsync(path);
+      if (info.exists) return path;
+      await FileSystem.makeDirectoryAsync(dir, { intermediates: true }).catch(() => {});
+      const res = await FileSystem.downloadAsync(uri, path);
+      if (res && (res.status === 200 || typeof res.status === 'undefined')) return path;
+      await FileSystem.deleteAsync(path).catch(() => {});
+      return null;
+    } catch {
+      return null;
+    }
+  };
+}
+
+const { getCachedFilePath, ensureImageCached } = global.__arpella_image_helpers__;
+
 const ProductImage = memo(({ product, style, resizeMode = 'cover' }) => {
   const dispatch = useDispatch();
   const fetchAttempted = useRef(false);
   const prefetched = useRef(new Set());
   const noImageTimer = useRef(null);
 
-  const productId = useMemo(() => 
-    product?.id ?? product?._id ?? product?.productId ?? product?.sku ?? null,
+  const productId = useMemo(
+    () => product?.id ?? product?._id ?? product?.productId ?? product?.sku ?? null,
     [product]
   );
 
-  // Optimized selector with shallow comparison
-  const { storeProduct, isImageLoading } = useSelector((state) => ({
-    storeProduct: productId ? state.products?.productsById?.[productId] : undefined,
-    isImageLoading: productId ? state.products?.imageLoadingStates?.[productId] || false : false,
-  }), shallowEqual);
+  const { storeProduct, isImageLoading } = useSelector(
+    (state) => ({
+      storeProduct: productId ? state.products?.productsById?.[productId] : undefined,
+      isImageLoading: productId ? state.products?.imageLoadingStates?.[productId] || false : false,
+    }),
+    shallowEqual
+  );
 
-  const uri = useMemo(() => 
-    storeProduct?.imageUrl ?? product?.imageUrl ?? product?.image ?? null,
-    [storeProduct?.imageUrl, product?.imageUrl, product?.image]
+  const uri = useMemo(
+    () =>
+      storeProduct?.imageUrl ??
+      product?.imageUrl ??
+      product?.image ??
+      product?.productimages?.[0]?.imageUrl ??
+      null,
+    [storeProduct?.imageUrl, product?.imageUrl, product?.image, product?.productimages]
   );
 
   const [showSpinner, setShowSpinner] = useState(false);
@@ -159,10 +160,10 @@ const ProductImage = memo(({ product, style, resizeMode = 'cover' }) => {
         if (mounted && local) {
           prefetched.current.add(u);
           setCachedUri(local);
-        } else {
-          if (mounted) setCachedUri(null);
+        } else if (mounted) {
+          setCachedUri(null);
         }
-      } catch (e) {
+      } catch {
         if (mounted) setCachedUri(null);
       }
     };
@@ -186,12 +187,14 @@ const ProductImage = memo(({ product, style, resizeMode = 'cover' }) => {
     );
   }
 
-  const displayUri = (cachedUri && (cachedUri.startsWith('file://') ? cachedUri : `file://${cachedUri}`)) || uri;
+  const displayUri =
+    (cachedUri && (cachedUri.startsWith('file://') ? cachedUri : `file://${cachedUri}`)) || uri;
+
   if (displayUri && !loadError) {
     return (
       <Image
         source={{ uri: displayUri }}
-        style={[StyleSheet.absoluteFill, { width: '100%', height: '100%' }]}
+        style={[{ width: '100%', height: '100%' }, style]}
         resizeMode={resizeMode}
         onError={onError}
       />
@@ -212,7 +215,6 @@ const ProductImage = memo(({ product, style, resizeMode = 'cover' }) => {
 
   return <View style={[{ backgroundColor: '#f8f8f8' }, style]} />;
 }, (prev, next) => {
-  // Custom comparison to prevent unnecessary rerenders
   const prevId = prev.product?.id ?? prev.product?._id ?? prev.product?.productId;
   const nextId = next.product?.id ?? next.product?._id ?? next.product?.productId;
   return prevId === nextId && prev.resizeMode === next.resizeMode;
@@ -223,16 +225,14 @@ ProductImage.displayName = 'ProductImage';
 const Home = () => {
   const dispatch = useDispatch();
   const router = useRouter();
-  
-  // Optimized selectors with shallow comparison
+
   const {
-    products,
+    products: rawProducts,
     categories: rawCategories,
     subcategories: rawSubcategories,
     loading,
     error,
     hasMore,
-    pageFetchStatus,
   } = useSelector((s) => ({
     products: s.products?.products || [],
     categories: s.products?.categories || [],
@@ -240,7 +240,6 @@ const Home = () => {
     loading: s.products?.loading || false,
     error: s.products?.error || null,
     hasMore: s.products?.hasMore || false,
-    pageFetchStatus: s.products?.pageFetchStatus || {},
   }), shallowEqual);
 
   const cartCount = useSelector((s) => {
@@ -255,217 +254,165 @@ const Home = () => {
     return 0;
   });
 
-  const [searchTerm, setSearchTerm] = useState('');
-  const [currentCategory, setCurrentCategory] = useState({ id: 'All', name: 'All', subcategories: [] });
-  const [currentSubcategory, setCurrentSubcategory] = useState(null);
-  const [modalVisible, setModalVisible] = useState(false);
-  const [selectedProduct, setSelectedProduct] = useState(null);
-  const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage] = useState(50);
-  const [isLoadingMore, setIsLoadingMore] = useState(false);
-  const [isFetchingFiltered, setIsFetchingFiltered] = useState(false);
-
-  const categoriesRef = useRef(null);
-  const fetchAttemptsRef = useRef(0);
-  const maxFetchAttempts = 5;
-
   const { width, height } = useWindowDimensions();
   const isLandscape = width > height;
   const numColumns = isLandscape ? 4 : 2;
 
-  // Optimized ID getter
-  const getId = useCallback((val) => {
-    if (val == null) return '';
-    if (typeof val === 'object') return String(val.id ?? val._id ?? val.categoryId ?? '');
-    return String(val);
-  }, []);
+  const [selectedCategory, setSelectedCategory] = useState('All');
+  const [selectedSub, setSelectedSub] = useState(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filtered, setFiltered] = useState([]);
 
-  // Memoized and optimized categories building
+  const [modalVisible, setModalVisible] = useState(false);
+  const [selectedProduct, setSelectedProduct] = useState(null);
+
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage] = useState(50);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+
+  const categoriesRef = useRef(null);
+  const isFilteringRef = useRef(false);
+
+  const resolveCategoryName = (c) => c?.categoryName ?? c?.name ?? c?.title ?? 'Unknown';
+  const resolveSubName = (s) => s?.subcategoryName ?? s?.name ?? s?.title ?? 'Unknown';
+
   const categories = useMemo(() => {
-    const cats = Array.isArray(rawCategories) ? rawCategories.map((c) => ({
-      id: String(c.id ?? c._id ?? c.categoryId ?? ''),
-      name: c.categoryName ?? c.name ?? c.title ?? 'Unknown',
-      raw: c,
-    })) : [];
-
-    // Build subcategory map more efficiently
     const byCat = {};
     if (Array.isArray(rawSubcategories)) {
       rawSubcategories.forEach((sc) => {
-        const parentId = String(
-          sc.categoryId ?? 
-          sc.parentCategoryId ?? 
-          sc.catId ?? 
-          sc.category?._id ?? 
-          sc.category?.id ?? 
-          sc.category ?? 
-          sc.parentId ?? 
-          ''
-        );
-        
-        if (parentId) {
-          if (!byCat[parentId]) {
-            byCat[parentId] = [];
-          }
-          byCat[parentId].push({
-            id: String(sc.id ?? sc._id ?? sc.subcategoryId ?? sc.subId ?? ''),
-            name: sc.subcategoryName ?? sc.name ?? sc.subCategoryName ?? sc.title ?? sc.subname ?? 'Unknown Subcategory'
-          });
+        const parentId = sc.categoryId ?? sc.parentCategoryId ?? sc.catId ?? sc.category ?? null;
+        const normalizedParent = (parentId === null || typeof parentId === 'undefined') ? null : parentId;
+        const id = sc.id ?? sc._id ?? sc.subcategoryId ?? sc.subcategory;
+        const name = resolveSubName(sc);
+        if (normalizedParent != null && id != null) {
+          byCat[String(normalizedParent)] = byCat[String(normalizedParent)] || [];
+          byCat[String(normalizedParent)].push({ ...sc, id, subcategoryName: name });
         }
       });
     }
 
-    const formatted = cats.map((c) => ({
-      id: c.id,
-      name: c.name,
-      subcategories: byCat[c.id] || (Array.isArray(c.raw?.subcategories) ? c.raw.subcategories.map(sub => ({
-        id: String(sub.id ?? sub._id ?? sub.subcategoryId ?? ''),
-        name: sub.subcategoryName ?? sub.name ?? sub.subCategoryName ?? sub.title ?? 'Unknown Subcategory'
-      })) : []),
-    }));
+    const cats = Array.isArray(rawCategories) ? rawCategories.map((c) => {
+      const id = c.id ?? c._id ?? c.categoryId ?? c.category;
+      const name = resolveCategoryName(c);
+      let subs = [];
+      if (Array.isArray(c.subcategories) && c.subcategories.length > 0) {
+        subs = c.subcategories.map(sc => ({ ...sc, id: sc.id ?? sc._id ?? sc.subcategoryId ?? sc.subcategory, subcategoryName: resolveSubName(sc) }));
+      } else {
+        subs = byCat[String(id)] || [];
+      }
+      return { ...c, id, name, subcategories: subs };
+    }) : [];
 
-    return [{ id: 'All', name: 'All', subcategories: [] }, ...formatted];
+    return [{ id: 'All', name: 'All', subcategories: [] }, ...cats];
   }, [rawCategories, rawSubcategories]);
 
-  // Initial fetch
   useEffect(() => {
     dispatch(fetchProductsAndRelated());
     dispatch(fetchProducts({ pageNumber: 1, pageSize: itemsPerPage }));
     setCurrentPage(1);
   }, [dispatch, itemsPerPage]);
 
-  // Fetch products based on category/subcategory filters
-  const fetchFilteredProducts = useCallback(async (categoryId, subcategoryId, page = 1, keepFetching = true) => {
-    setIsFetchingFiltered(true);
-    fetchAttemptsRef.current = 0;
+  const subsOf = useCallback((cat) => {
+    if (!cat) return [];
+    return (rawSubcategories || []).filter(sc => String(sc.categoryId) === String(cat.id));
+  }, [rawSubcategories]);
 
-    const fetchParams = {
-      pageNumber: page,
-      pageSize: itemsPerPage,
-    };
+  useEffect(() => {
+    let list = Array.isArray(rawProducts) ? rawProducts.slice() : [];
 
-    // Add filters if not "All"
-    if (categoryId && categoryId !== 'All') {
-      fetchParams.categoryId = categoryId;
-    }
-    if (subcategoryId) {
-      fetchParams.subcategoryId = subcategoryId;
+    if (selectedCategory !== 'All') {
+      const selId = selectedCategory?.id ?? selectedCategory;
+      list = list.filter(p => String(p.category) === String(selId));
     }
 
-    try {
-      const result = await dispatch(fetchProducts(fetchParams)).unwrap();
-      
-      // If no products found and we should keep fetching
-      if (keepFetching && (!result.products || result.products.length === 0) && result.hasMore && fetchAttemptsRef.current < maxFetchAttempts) {
-        fetchAttemptsRef.current += 1;
-        // Recursively fetch next page
-        await fetchFilteredProducts(categoryId, subcategoryId, page + 1, true);
-      } else {
-        setCurrentPage(page);
-        setIsFetchingFiltered(false);
-      }
-    } catch (err) {
-      console.error('Error fetching filtered products:', err);
-      setIsFetchingFiltered(false);
+    if (selectedSub) {
+      list = list.filter(p => String(p.subcategory) === String(selectedSub.id));
     }
-  }, [dispatch, itemsPerPage]);
 
-  // Handle category selection with backend fetch
-  const onSelectCategory = useCallback((cat, index) => {
-    setSearchTerm('');
-    setCurrentSubcategory(null);
-    setCurrentCategory(cat);
-    setSelectedProduct(null);
-    
-    // Reset and fetch from backend
-    fetchAttemptsRef.current = 0;
-    fetchFilteredProducts(cat.id, null, 1, true);
-    
-    if (categoriesRef.current && typeof index === 'number') {
-      setTimeout(() => {
-        try {
-          categoriesRef.current?.scrollToIndex({ 
-            index, 
-            animated: true, 
-            viewPosition: 0.5 
-          });
-        } catch (e) {
-          // Fallback to scrollToOffset if scrollToIndex fails
-          categoriesRef.current?.scrollToOffset({ 
-            offset: index * 90, 
-            animated: true 
-          });
+    if (searchTerm && searchTerm.trim()) {
+      const t = searchTerm.trim().toLowerCase();
+      list = list.filter(p => {
+        const nm = String(p.name || p.productName || p.inventoryName || '').toLowerCase();
+        const cn = String(p.categoryName || '').toLowerCase();
+        const sn = String(p.subcategoryName || '').toLowerCase();
+        return nm.includes(t) || cn.includes(t) || sn.includes(t);
+      });
+    }
+
+    setFiltered(list);
+  }, [rawProducts, selectedCategory, selectedSub, searchTerm]);
+
+  useEffect(() => {
+    if (isFilteringRef.current) return;
+    if (!Array.isArray(rawProducts)) return;
+    if (filtered.length > 0) return;
+    if (!hasMore) return;
+
+    let cancelled = false;
+    const run = async () => {
+      isFilteringRef.current = true;
+      try {
+        while (!cancelled && filtered.length === 0 && hasMore) {
+          const nextPage = currentPage + 1;
+          try {
+            await dispatch(fetchProducts({ pageNumber: nextPage, pageSize: itemsPerPage })).unwrap();
+            setCurrentPage(prev => Math.max(prev, nextPage));
+            await new Promise(res => setTimeout(res, 40));
+          } catch {
+            break;
+          }
         }
-      }, 100);
-    }
-  }, [fetchFilteredProducts]);
-
-  // Handle subcategory selection with backend fetch
-  const onSelectSubcategory = useCallback((subcat) => {
-    setSearchTerm('');
-    setCurrentSubcategory(subcat);
-    setSelectedProduct(null);
-    
-    // Reset and fetch from backend
-    fetchAttemptsRef.current = 0;
-    fetchFilteredProducts(currentCategory.id, subcat?.id, 1, true);
-  }, [currentCategory.id, fetchFilteredProducts]);
-
-  // Clear subcategory filter
-  const onClearSubcategory = useCallback(() => {
-    setCurrentSubcategory(null);
-    setSearchTerm('');
-    
-    // Fetch with only category filter
-    fetchAttemptsRef.current = 0;
-    fetchFilteredProducts(currentCategory.id, null, 1, true);
-  }, [currentCategory.id, fetchFilteredProducts]);
-
-  // Client-side search filter (only filters displayed products, doesn't fetch)
-  const filteredProducts = useMemo(() => {
-    if (!Array.isArray(products)) return [];
-    
-    const term = searchTerm.trim().toLowerCase();
-    
-    // If no search term, return all products
-    if (!term) {
-      return products;
-    }
-
-    // Filter by search term only
-    return products.filter((p) => {
-      const name = String(p.name || p.productName || '').toLowerCase();
-      return name.includes(term);
-    });
-  }, [products, searchTerm]);
-
-  // Load more pagination
-  const handleLoadMore = useCallback(() => {
-    if (!hasMore || isLoadingMore || isFetchingFiltered) return;
-    const nextPage = currentPage + 1;
-    if (pageFetchStatus[nextPage] === 'pending') return;
-    
-    setIsLoadingMore(true);
-    
-    const fetchParams = {
-      pageNumber: nextPage,
-      pageSize: itemsPerPage,
+      } finally {
+        isFilteringRef.current = false;
+      }
     };
 
-    // Add current filters
-    if (currentCategory.id && currentCategory.id !== 'All') {
-      fetchParams.categoryId = currentCategory.id;
-    }
-    if (currentSubcategory?.id) {
-      fetchParams.subcategoryId = currentSubcategory.id;
-    }
+    run();
 
-    dispatch(fetchProducts(fetchParams))
+    return () => {
+      cancelled = true;
+      isFilteringRef.current = false;
+    };
+  }, [selectedCategory, selectedSub, searchTerm, hasMore, filtered.length, rawProducts, currentPage, itemsPerPage, dispatch]);
+
+  const handleLoadMore = useCallback(() => {
+    if (!hasMore || isLoadingMore || loading) return;
+    const nextPage = currentPage + 1;
+    setIsLoadingMore(true);
+    dispatch(fetchProducts({ pageNumber: nextPage, pageSize: itemsPerPage }))
       .finally(() => {
         setCurrentPage(nextPage);
         setIsLoadingMore(false);
       });
-  }, [dispatch, hasMore, currentPage, pageFetchStatus, itemsPerPage, isLoadingMore, isFetchingFiltered, currentCategory.id, currentSubcategory?.id]);
+  }, [dispatch, hasMore, currentPage, itemsPerPage, isLoadingMore, loading]);
+
+  const onSelectCategory = useCallback((cat, index) => {
+    setSearchTerm('');
+    setSelectedSub(null);
+    setSelectedCategory(cat || 'All');
+    setSelectedProduct(null);
+
+    if (categoriesRef.current && typeof index === 'number') {
+      setTimeout(() => {
+        try {
+          categoriesRef.current?.scrollToIndex({ index, animated: true, viewPosition: 0.5 });
+        } catch (e) {
+          categoriesRef.current?.scrollToOffset({ offset: index * 90, animated: true });
+        }
+      }, 100);
+    }
+  }, []);
+
+  const onSelectSubcategory = useCallback((subcat) => {
+    setSearchTerm('');
+    setSelectedSub(subcat);
+    setSelectedProduct(null);
+  }, []);
+
+  const onClearSubcategory = useCallback(() => {
+    setSelectedSub(null);
+    setSearchTerm('');
+  }, []);
 
   const onSelectProduct = useCallback((product) => {
     setSelectedProduct({ ...product, quantity: 1 });
@@ -485,7 +432,6 @@ const Home = () => {
     setSelectedProduct(null);
   }, [dispatch, selectedProduct]);
 
-  // Memoized product card with optimizations
   const renderProductCard = useCallback(({ item }) => {
     const horizontalPadding = 30;
     const totalAvailable = Math.max(0, width - horizontalPadding);
@@ -494,56 +440,28 @@ const Home = () => {
     const imageContainerHeight = isLandscape ? 140 : 200;
 
     return (
-      <TouchableOpacity
-        style={[styles.card, { width: cardWidth, margin: 8 }]}
-        onPress={() => onSelectProduct(item)}
-        activeOpacity={0.7}
-      >
-        <View style={{ 
-          width: '100%', 
-          height: imageContainerHeight, 
-          backgroundColor: '#f8f8f8', 
-          justifyContent: 'center', 
-          alignItems: 'center' 
-        }}>
-          <ProductImage 
-            product={item} 
-            style={{ width: '100%', height: '100%' }} 
-            resizeMode="cover" 
-          />
+      <TouchableOpacity style={[styles.card, { width: cardWidth, margin: 8 }]} onPress={() => onSelectProduct(item)} activeOpacity={0.7}>
+        <View style={{ width: '100%', height: imageContainerHeight, backgroundColor: '#f8f8f8', justifyContent: 'center', alignItems: 'center' }}>
+          <ProductImage product={item} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
         </View>
-        <Text style={styles.productName} numberOfLines={2}>
-          {item.name || item.productName || 'Unnamed Product'}
-        </Text>
+        <Text style={styles.productName} numberOfLines={2}>{item.name || item.productName || 'Unnamed Product'}</Text>
         <View style={styles.priceWrapper}>
-          <Text style={styles.productPrice}>
-            KSH {item.price != null ? Number(item.price).toLocaleString() : '0'}
-          </Text>
+          <Text style={styles.productPrice}>KSH {item.price != null ? Number(item.price).toLocaleString() : '0'}</Text>
         </View>
       </TouchableOpacity>
     );
   }, [onSelectProduct, width, numColumns, isLandscape]);
 
   const renderCategoryItem = useCallback(({ item, index }) => {
-    const isActive = currentCategory.id === item.id;
+    const isActive = String(selectedCategory?.id ?? selectedCategory) === String(item.id);
     const hasSubs = Array.isArray(item.subcategories) && item.subcategories.length > 0;
     return (
-      <TouchableOpacity
-        onPress={() => onSelectCategory(item, index)}
-        style={[styles.filterButton, isActive && styles.filterButtonActive]}
-        activeOpacity={0.7}
-      >
-        <Text style={[styles.filterText, isActive && styles.filterTextActive]}>
-          {item.name}
-        </Text>
-        {hasSubs && (
-          <Text style={{ marginLeft: 4, color: isActive ? '#fff' : '#666', fontSize: 10 }}>
-            ▼
-          </Text>
-        )}
+      <TouchableOpacity onPress={() => onSelectCategory(item, index)} style={[styles.filterButton, isActive && styles.filterButtonActive]} activeOpacity={0.7}>
+        <Text style={[styles.filterText, isActive && styles.filterTextActive]}>{item.name}</Text>
+        {hasSubs && <Text style={{ marginLeft: 4, color: isActive ? '#fff' : '#666', fontSize: 10 }}>▼</Text>}
       </TouchableOpacity>
     );
-  }, [currentCategory.id, onSelectCategory]);
+  }, [selectedCategory, onSelectCategory]);
 
   const keyExtractor = useCallback((item, index) => {
     const id = item?.id ?? item?._id ?? item?.productId;
@@ -556,42 +474,32 @@ const Home = () => {
     const perCardGutter = 16;
     const cardWidth = Math.floor((totalAvailable - (numColumns * perCardGutter)) / numColumns);
     const imageHeight = isLandscape ? 140 : 200;
-    const ITEM_HEIGHT = imageHeight + 120; // approximate total card height
-    
-    return {
-      length: ITEM_HEIGHT,
-      offset: ITEM_HEIGHT * Math.floor(index / numColumns),
-      index,
-    };
+    const ITEM_HEIGHT = imageHeight + 120;
+    return { length: ITEM_HEIGHT, offset: ITEM_HEIGHT * Math.floor(index / numColumns), index };
   }, [width, numColumns, isLandscape]);
 
   const ListFooterComponent = useCallback(() => {
-    const nextPage = currentPage + 1;
-    const pending = pageFetchStatus[nextPage] === 'pending' || isLoadingMore || isFetchingFiltered;
-    
-    if (pending) {
+    if (isLoadingMore || loading) {
       return (
-        <View style={{ padding: 12 }}>
-          <ActivityIndicator size="small" color="#5a2428" />
-          <Text style={{ textAlign: 'center', color: '#888', marginTop: 8, fontSize: 12 }}>
-            {isFetchingFiltered ? 'Searching for products...' : 'Loading more...'}
-          </Text>
+        <View style={styles.footerLoader}>
+          <ActivityIndicator size="large" color="#5a2428" />
+          <Text style={styles.footerText}>Loading more products...</Text>
         </View>
       );
     }
-    if (!hasMore && filteredProducts.length > 0) {
+    if (!hasMore && Array.isArray(rawProducts) && rawProducts.length > 0) {
       return (
-        <View style={{ padding: 12, alignItems: 'center' }}>
-          <Text style={{ color: '#888', fontSize: 14 }}>
-            Showing {filteredProducts.length} products
+        <View style={styles.footerEnd}>
+          <Text style={styles.footerEndText}>
+            {filtered.length > 0 ? `Showing ${filtered.length} of ${rawProducts.length} products` : `Loaded all ${rawProducts.length} products`}
           </Text>
         </View>
       );
     }
     return null;
-  }, [currentPage, pageFetchStatus, isLoadingMore, hasMore, filteredProducts.length, isFetchingFiltered]);
+  }, [isLoadingMore, loading, hasMore, rawProducts, filtered.length]);
 
-  if (loading && products.length === 0) {
+  if (loading && (!Array.isArray(rawProducts) || rawProducts.length === 0)) {
     return (
       <View style={styles.centered}>
         <ActivityIndicator size="large" color="#5a2428" />
@@ -600,14 +508,11 @@ const Home = () => {
     );
   }
 
-  if (error && products.length === 0) {
+  if (error && (!Array.isArray(rawProducts) || rawProducts.length === 0)) {
     return (
       <View style={styles.centered}>
         <Text style={styles.errorText}>{error}</Text>
-        <TouchableOpacity 
-          style={styles.retryButton} 
-          onPress={() => dispatch(fetchProductsAndRelated())}
-        >
+        <TouchableOpacity style={styles.retryButton} onPress={() => dispatch(fetchProductsAndRelated())}>
           <Text style={styles.retryText}>Retry</Text>
         </TouchableOpacity>
       </View>
@@ -616,37 +521,22 @@ const Home = () => {
 
   return (
     <View style={styles.container}>
-      {/* Header */}
       <View style={styles.header}>
         <Text style={styles.title}>Arpella Stores</Text>
-        <TouchableOpacity 
-          onPress={() => router.push('./cart')} 
-          accessibilityRole="button" 
-          accessibilityLabel="Open cart"
-        >
+        <TouchableOpacity onPress={() => router.push('./cart')} accessibilityRole="button" accessibilityLabel="Open cart">
           <View style={{ width: 36, height: 36, justifyContent: 'center', alignItems: 'center' }}>
             <FontAwesome name="shopping-cart" size={24} />
             {cartCount > 0 && (
               <View style={styles.cartBadge} pointerEvents="none">
-                <Text style={styles.cartBadgeText}>
-                  {cartCount > 99 ? '99+' : cartCount}
-                </Text>
+                <Text style={styles.cartBadgeText}>{cartCount > 99 ? '99+' : cartCount}</Text>
               </View>
             )}
           </View>
         </TouchableOpacity>
       </View>
 
-      {/* Search */}
-      <TextInput
-        style={styles.searchInput}
-        placeholder="Search products…"
-        value={searchTerm}
-        onChangeText={setSearchTerm}
-        returnKeyType="search"
-      />
+      <TextInput style={styles.searchInput} placeholder="Search products…" value={searchTerm} onChangeText={setSearchTerm} returnKeyType="search" />
 
-      {/* Category Tabs */}
       <View style={styles.categoriesWrapper}>
         <FlatList
           ref={categoriesRef}
@@ -663,47 +553,28 @@ const Home = () => {
         />
       </View>
 
-      {/* Subcategory Tabs */}
-      {currentCategory.id !== 'All' && currentCategory.subcategories.length > 0 && (
+      {selectedCategory !== 'All' && subsOf(selectedCategory).length > 0 && (
         <View style={styles.categoriesWrapper}>
           <View style={styles.subcategoryContainer}>
             <FlatList
-              data={currentCategory.subcategories}
+              data={subsOf(selectedCategory)}
               horizontal
               showsHorizontalScrollIndicator={false}
-              keyExtractor={(item) => String(item.id)}
+              keyExtractor={(item) => String(item.id ?? item._id ?? item.subcategoryId)}
               contentContainerStyle={styles.subcategoryContent}
               renderItem={({ item }) => (
-                <TouchableOpacity
-                  onPress={() => onSelectSubcategory(item)}
-                  style={[
-                    styles.subcategoryButton,
-                    currentSubcategory?.id === item.id && styles.subcategoryButtonActive
-                  ]}
-                  activeOpacity={0.7}
-                >
-                  <Text style={[
-                    styles.subcategoryText,
-                    currentSubcategory?.id === item.id && styles.subcategoryTextActive
-                  ]}>
-                    {item.name || 'Unknown'}
+                <TouchableOpacity onPress={() => onSelectSubcategory(item)} style={[styles.subcategoryButton, String(selectedSub?.id) === String(item.id) && styles.subcategoryButtonActive]} activeOpacity={0.7}>
+                  <Text style={[styles.subcategoryText, String(selectedSub?.id) === String(item.id) && styles.subcategoryTextActive]}>
+                    {item.subcategoryName ?? item.name ?? 'Unknown'}
                   </Text>
                 </TouchableOpacity>
               )}
-              ListHeaderComponent={
-                currentSubcategory ? (
-                  <TouchableOpacity
-                    onPress={onClearSubcategory}
-                    style={[styles.subcategoryButton, { backgroundColor: '#ff6b6b' }]}
-                    activeOpacity={0.7}
-                  >
-                    <FontAwesome name="times" size={12} color="#fff" />
-                    <Text style={[styles.subcategoryText, { color: '#fff', marginLeft: 4 }]}>
-                      Clear
-                    </Text>
-                  </TouchableOpacity>
-                ) : null
-              }
+              ListHeaderComponent={selectedSub ? (
+                <TouchableOpacity onPress={onClearSubcategory} style={[styles.subcategoryButton, { backgroundColor: '#ff6b6b' }]} activeOpacity={0.7}>
+                  <FontAwesome name="times" size={12} color="#fff" />
+                  <Text style={[styles.subcategoryText, { color: '#fff', marginLeft: 4 }]}>Clear</Text>
+                </TouchableOpacity>
+              ) : null}
               initialNumToRender={8}
               maxToRenderPerBatch={4}
             />
@@ -711,44 +582,35 @@ const Home = () => {
         </View>
       )}
 
-      {/* Active Filters Display */}
-      {(currentCategory.id !== 'All' || currentSubcategory) && (
+      {(selectedCategory !== 'All' || selectedSub) && (
         <View style={styles.activeFiltersContainer}>
           <Text style={styles.activeFiltersText}>
-            Filters: {currentCategory.name}
-            {currentSubcategory ? ` > ${currentSubcategory.name}` : ''}
+            Filters: {selectedCategory?.name ?? (selectedCategory === 'All' ? 'All' : '')}
+            {selectedSub ? ` > ${selectedSub.subcategoryName ?? selectedSub.name}` : ''}
+            {' '}({filtered.length} products)
           </Text>
         </View>
       )}
 
-      {/* Product Grid */}
       <View style={styles.products}>
-        {filteredProducts.length === 0 && !isFetchingFiltered ? (
+        {filtered.length === 0 && !loading ? (
           <View style={styles.centered}>
             <FontAwesome name="inbox" size={48} color="#ccc" />
             <Text style={styles.emptyText}>No products found</Text>
-            {(currentCategory.id !== 'All' || currentSubcategory) && (
-              <TouchableOpacity 
-                style={styles.clearFiltersButton}
-                onPress={() => {
-                  setCurrentCategory({ id: 'All', name: 'All', subcategories: [] });
-                  setCurrentSubcategory(null);
-                  setSearchTerm('');
-                  fetchFilteredProducts('All', null, 1, false);
-                }}
-              >
+            {(selectedCategory !== 'All' || selectedSub) && (
+              <TouchableOpacity style={styles.clearFiltersButton} onPress={() => { setSelectedCategory('All'); setSelectedSub(null); setSearchTerm(''); }}>
                 <Text style={styles.clearFiltersText}>Clear Filters</Text>
               </TouchableOpacity>
             )}
           </View>
         ) : (
           <FlatList
-            data={filteredProducts}
+            data={filtered}
             numColumns={numColumns}
             keyExtractor={keyExtractor}
             renderItem={renderProductCard}
             onEndReached={handleLoadMore}
-            onEndReachedThreshold={0.6}
+            onEndReachedThreshold={0.5}
             ListFooterComponent={ListFooterComponent}
             key={`cols-${numColumns}`}
             contentContainerStyle={{ paddingBottom: 120 }}
@@ -762,62 +624,31 @@ const Home = () => {
         )}
       </View>
 
-      {/* Product Modal */}
       {selectedProduct && (
-        <Modal 
-          visible={modalVisible} 
-          animationType="slide" 
-          onRequestClose={() => setModalVisible(false)}
-          transparent={false}
-        >
+        <Modal visible={modalVisible} animationType="slide" onRequestClose={() => setModalVisible(false)} transparent={false}>
           <View style={styles.modal}>
             <View style={styles.closeButtonContainer}>
-              <TouchableOpacity
-                onPress={() => setModalVisible(false)}
-                style={styles.closeButton}
-                accessibilityRole="button"
-                accessibilityLabel="Close product modal"
-              >
+              <TouchableOpacity onPress={() => setModalVisible(false)} style={styles.closeButton} accessibilityRole="button" accessibilityLabel="Close product modal">
                 <FontAwesome name="close" size={20} color="#333" />
               </TouchableOpacity>
             </View>
 
-            <Text style={styles.modalTitle}>
-              {selectedProduct.name || selectedProduct.productName || 'Product'}
-            </Text>
+            <Text style={styles.modalTitle}>{selectedProduct.name || selectedProduct.productName || 'Product'}</Text>
 
             <View style={styles.modalImageContainer}>
-              <ProductImage 
-                product={selectedProduct} 
-                style={{ width: '100%', height: '100%' }} 
-                resizeMode="contain" 
-              />
+              <ProductImage product={selectedProduct} style={{ width: '100%', height: '100%' }} resizeMode="contain" />
             </View>
 
             <View style={{ alignItems: 'center', marginBottom: 12 }}>
-              <Text style={styles.modalPrice}>
-                KSH {selectedProduct.price != null ? Number(selectedProduct.price).toLocaleString() : '0'}
-              </Text>
+              <Text style={styles.modalPrice}>KSH {selectedProduct.price != null ? Number(selectedProduct.price).toLocaleString() : '0'}</Text>
             </View>
 
             <View style={styles.quantityRow}>
-              <TouchableOpacity
-                onPress={() => setSelectedProduct((p) => ({ 
-                  ...p, 
-                  quantity: Math.max(1, (p.quantity || 1) - 1) 
-                }))}
-                style={styles.qtyButton}
-              >
+              <TouchableOpacity onPress={() => setSelectedProduct((p) => ({ ...p, quantity: Math.max(1, (p.quantity || 1) - 1) }))} style={styles.qtyButton}>
                 <Text style={styles.qtyText}>−</Text>
               </TouchableOpacity>
               <Text style={styles.qtyValue}>{selectedProduct.quantity}</Text>
-              <TouchableOpacity
-                onPress={() => setSelectedProduct((p) => ({ 
-                  ...p, 
-                  quantity: (p.quantity || 1) + 1 
-                }))}
-                style={styles.qtyButton}
-              >
+              <TouchableOpacity onPress={() => setSelectedProduct((p) => ({ ...p, quantity: (p.quantity || 1) + 1 }))} style={styles.qtyButton}>
                 <Text style={styles.qtyText}>+</Text>
               </TouchableOpacity>
             </View>
@@ -829,7 +660,6 @@ const Home = () => {
         </Modal>
       )}
 
-      {/* Bottom Navigation */}
       <View style={styles.navbar}>
         <TouchableOpacity style={styles.navItem} onPress={() => router.push('./')}>
           <FontAwesome name="home" size={24} color="blue" />
@@ -1039,6 +869,26 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontWeight: 'bold',
     fontSize: 14,
+  },
+  footerLoader: {
+    paddingVertical: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  footerText: {
+    marginTop: 10,
+    fontSize: 14,
+    color: '#5a2428',
+    fontWeight: '600',
+  },
+  footerEnd: {
+    paddingVertical: 16,
+    alignItems: 'center',
+  },
+  footerEndText: {
+    fontSize: 13,
+    color: '#666',
+    fontStyle: 'italic',
   },
   modal: { 
     flex: 1, 
