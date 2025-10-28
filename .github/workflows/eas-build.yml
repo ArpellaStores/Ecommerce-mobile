@@ -79,8 +79,9 @@ jobs:
             exit 1
           fi
 
-          BUILD_ID=$(jq -r '.id // empty' "$TMP_OUTPUT")
-          ARTIFACT_URL=$(jq -r '.artifacts[0].url // empty' "$TMP_OUTPUT")
+          # EAS CLI returns an array when using --json, so we need to access the first element
+          BUILD_ID=$(jq -r '.[0].id // empty' "$TMP_OUTPUT")
+          ARTIFACT_URL=$(jq -r '.[0].artifacts.buildUrl // empty' "$TMP_OUTPUT")
 
           if [ -z "$BUILD_ID" ]; then
             echo "ERROR: Could not determine EAS build id."
