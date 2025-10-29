@@ -110,19 +110,45 @@ jobs:
             exit 1
           fi
 
-          # Determine file extension and download
-          FILE_EXT="${ART_URL##*.}"
-          FILE_NAME="app-android.${FILE_EXT}"
+          # Download the zip file
+          ZIP_FILE="build-artifact.zip"
+          curl -L --fail --retry 5 --retry-delay 2 -o "$ZIP_FILE" "$ART_URL"
 
-          curl -L --fail --retry 5 --retry-delay 2 -o "$FILE_NAME" "$ART_URL"
-
-          if [ ! -s "$FILE_NAME" ]; then
+          if [ ! -s "$ZIP_FILE" ]; then
             echo "ERROR: Downloaded artifact is empty."
             exit 1
           fi
 
-          echo "artifact_file=$FILE_NAME" >> "$GITHUB_OUTPUT"
-          ls -lh "$FILE_NAME"
+          echo "zip_file=$ZIP_FILE" >> "$GITHUB_OUTPUT"
+          ls -lh "$ZIP_FILE"
+
+      - name: Extract APK from zip
+        id: extract_apk
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          ZIP_FILE="${{ steps.download_artifact.outputs.zip_file }}"
+          
+          # Extract the zip
+          unzip -q "$ZIP_FILE"
+          
+          # Find the APK file (should be in current directory after unzip)
+          APK_FILE=$(find . -maxdepth 1 -type f -name "*.apk" | head -n 1)
+          
+          if [ -z "$APK_FILE" ]; then
+            echo "ERROR: No APK file found after extraction."
+            echo "Contents:"
+            ls -lah
+            exit 1
+          fi
+
+          # Rename to a clean name
+          FINAL_NAME="app-android.apk"
+          mv "$APK_FILE" "$FINAL_NAME"
+          
+          echo "apk_file=$FINAL_NAME" >> "$GITHUB_OUTPUT"
+          ls -lh "$FINAL_NAME"
 
       - name: Upload artifact to Actions
         uses: actions/upload-artifact@v4
