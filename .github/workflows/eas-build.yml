@@ -110,17 +110,17 @@ jobs:
             exit 1
           fi
 
-          # Download the zip file
-          ZIP_FILE="build-artifact.zip"
-          curl -L --fail --retry 5 --retry-delay 2 -o "$ZIP_FILE" "$ART_URL"
+          # Download the APK directly
+          APK_FILE="app-android.apk"
+          curl -L --fail --retry 5 --retry-delay 2 -o "$APK_FILE" "$ART_URL"
 
-          if [ ! -s "$ZIP_FILE" ]; then
+          if [ ! -s "$APK_FILE" ]; then
             echo "ERROR: Downloaded artifact is empty."
             exit 1
           fi
 
-          echo "zip_file=$ZIP_FILE" >> "$GITHUB_OUTPUT"
-          ls -lh "$ZIP_FILE"
+          echo "apk_file=$APK_FILE" >> "$GITHUB_OUTPUT"
+          ls -lh "$APK_FILE"
 
       - name: Extract APK from zip
         id: extract_apk
@@ -154,7 +154,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: android-build
-          path: ${{ steps.download_artifact.outputs.artifact_file }}
+          path: ${{ steps.extract_apk.outputs.apk_file }}
 
       - name: Create GitHub release and attach asset
         id: release
@@ -167,7 +167,7 @@ jobs:
             EAS Build ID: ${{ steps.eas_build.outputs.build_id }}
           draft: false
           prerelease: true
-          files: ${{ steps.download_artifact.outputs.artifact_file }}
+          artifacts: ${{ steps.extract_apk.outputs.apk_file }}
 
       - name: Output release URL
         shell: bash
