@@ -270,6 +270,10 @@ const Home = () => {
   const [itemsPerPage] = useState(50);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
 
+  // Track initial load state
+  const [initialLoadComplete, setInitialLoadComplete] = useState(false);
+  const initialLoadAttempted = useRef(false);
+
   const categoriesRef = useRef(null);
   const isFilteringRef = useRef(false);
 
@@ -307,10 +311,26 @@ const Home = () => {
   }, [rawCategories, rawSubcategories]);
 
   useEffect(() => {
-    dispatch(fetchProductsAndRelated());
-    dispatch(fetchProducts({ pageNumber: 1, pageSize: itemsPerPage }));
-    setCurrentPage(1);
+    if (!initialLoadAttempted.current) {
+      initialLoadAttempted.current = true;
+      dispatch(fetchProductsAndRelated());
+      dispatch(fetchProducts({ pageNumber: 1, pageSize: itemsPerPage }));
+      setCurrentPage(1);
+    }
   }, [dispatch, itemsPerPage]);
+
+  // Check if initial data has loaded
+  useEffect(() => {
+    if (!initialLoadComplete && !loading) {
+      const hasCategories = Array.isArray(rawCategories) && rawCategories.length > 0;
+      const hasProducts = Array.isArray(rawProducts) && rawProducts.length > 0;
+      
+      // Consider initial load complete if we have categories and products, or if there was an error
+      if ((hasCategories && hasProducts) || error) {
+        setInitialLoadComplete(true);
+      }
+    }
+  }, [loading, rawCategories, rawProducts, error, initialLoadComplete]);
 
   const subsOf = useCallback((cat) => {
     if (!cat) return [];
@@ -499,11 +519,15 @@ const Home = () => {
     return null;
   }, [isLoadingMore, loading, hasMore, rawProducts, filtered.length]);
 
-  if (loading && (!Array.isArray(rawProducts) || rawProducts.length === 0)) {
+  // Show initial loading overlay
+  if (!initialLoadComplete) {
     return (
-      <View style={styles.centered}>
-        <ActivityIndicator size="large" color="#5a2428" />
-        <Text style={styles.loadingText}>Loading products…</Text>
+      <View style={styles.overlayContainer}>
+        <View style={styles.overlayContent}>
+          <ActivityIndicator size="large" color="#5a2428" />
+          <Text style={styles.overlayText}>Loading Arpella Stores...</Text>
+          <Text style={styles.overlaySubtext}>Preparing products and categories</Text>
+        </View>
       </View>
     );
   }
@@ -512,7 +536,11 @@ const Home = () => {
     return (
       <View style={styles.centered}>
         <Text style={styles.errorText}>{error}</Text>
-        <TouchableOpacity style={styles.retryButton} onPress={() => dispatch(fetchProductsAndRelated())}>
+        <TouchableOpacity style={styles.retryButton} onPress={() => {
+          setInitialLoadComplete(false);
+          initialLoadAttempted.current = false;
+          dispatch(fetchProductsAndRelated());
+        }}>
           <Text style={styles.retryText}>Retry</Text>
         </TouchableOpacity>
       </View>
@@ -1008,6 +1036,38 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 11,
     fontWeight: '700',
+  },
+  overlayContainer: {
+    flex: 1,
+    backgroundColor: '#FFF8E1',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  overlayContent: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 40,
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    minWidth: 280,
+  },
+  overlayText: {
+    marginTop: 20,
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#5a2428',
+    textAlign: 'center',
+  },
+  overlaySubtext: {
+    marginTop: 8,
+    fontSize: 14,
+    color: '#666',
+    textAlign: 'center',
   },
 });
 
