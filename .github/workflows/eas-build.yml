@@ -123,11 +123,45 @@ jobs:
           echo "file_name=$FILE_NAME" >> "$GITHUB_OUTPUT"
           ls -lh "$FILE_NAME"
 
+      - name: Unzip artifact
+        id: unzip_artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          ZIP_FILE="${{ steps.download_artifact.outputs.file_name }}"
+          
+          if [ ! -f "$ZIP_FILE" ]; then
+            echo "ERROR: Zip file not found."
+            exit 1
+          fi
+
+          EXTRACT_DIR="extracted-build"
+          mkdir -p "$EXTRACT_DIR"
+          
+          unzip -q "$ZIP_FILE" -d "$EXTRACT_DIR"
+          
+          # Find the APK or AAB file
+          APK_FILE=$(find "$EXTRACT_DIR" -type f \( -name "*.apk" -o -name "*.aab" \) | head -n 1)
+          
+          if [ -z "$APK_FILE" ]; then
+            echo "ERROR: No APK or AAB file found in the zip."
+            ls -R "$EXTRACT_DIR"
+            exit 1
+          fi
+
+          # Move it to a known location
+          FINAL_NAME="app-android.${APK_FILE##*.}"
+          mv "$APK_FILE" "$FINAL_NAME"
+          
+          echo "apk_file=$FINAL_NAME" >> "$GITHUB_OUTPUT"
+          ls -lh "$FINAL_NAME"
+
       - name: Upload artifact to Actions
         uses: actions/upload-artifact@v4
         with:
           name: android-build
-          path: ${{ steps.download_artifact.outputs.file_name }}
+          path: ${{ steps.unzip_artifact.outputs.apk_file }}
 
       - name: Create GitHub release and attach asset
         id: release
@@ -140,7 +174,7 @@ jobs:
             EAS Build ID: ${{ steps.eas_build.outputs.build_id }}
           draft: false
           prerelease: true
-          files: ${{ steps.download_artifact.outputs.file_name }}
+          files: ${{ steps.unzip_artifact.outputs.apk_file }}
 
       - name: Output release URL
         shell: bash
