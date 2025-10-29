@@ -136,17 +136,32 @@ jobs:
             exit 1
           fi
 
+          # Check if it's actually a zip file
+          echo "Checking file type:"
+          file "$ZIP_FILE"
+          
+          # List contents first
+          echo "Listing zip contents:"
+          unzip -l "$ZIP_FILE" || {
+            echo "Not a valid zip file. File might already be APK/AAB."
+            # If it's not a zip, just use the file directly
+            echo "apk_file=$ZIP_FILE" >> "$GITHUB_OUTPUT"
+            exit 0
+          }
+
           EXTRACT_DIR="extracted-build"
           mkdir -p "$EXTRACT_DIR"
           
           unzip -q "$ZIP_FILE" -d "$EXTRACT_DIR"
+          
+          echo "Contents after extraction:"
+          ls -R "$EXTRACT_DIR"
           
           # Find the APK or AAB file
           APK_FILE=$(find "$EXTRACT_DIR" -type f \( -name "*.apk" -o -name "*.aab" \) | head -n 1)
           
           if [ -z "$APK_FILE" ]; then
             echo "ERROR: No APK or AAB file found in the zip."
-            ls -R "$EXTRACT_DIR"
             exit 1
           fi
 
