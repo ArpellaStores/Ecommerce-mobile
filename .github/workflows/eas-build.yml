@@ -110,6 +110,7 @@ jobs:
             exit 1
           fi
 
+          # Determine file extension and download
           FILE_EXT="${ART_URL##*.}"
           FILE_NAME="app-android.${FILE_EXT}"
 
@@ -120,63 +121,14 @@ jobs:
             exit 1
           fi
 
-          echo "file_name=$FILE_NAME" >> "$GITHUB_OUTPUT"
+          echo "artifact_file=$FILE_NAME" >> "$GITHUB_OUTPUT"
           ls -lh "$FILE_NAME"
-
-      - name: Unzip artifact
-        id: unzip_artifact
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          ZIP_FILE="${{ steps.download_artifact.outputs.file_name }}"
-          
-          if [ ! -f "$ZIP_FILE" ]; then
-            echo "ERROR: Zip file not found."
-            exit 1
-          fi
-
-          # Check if it's actually a zip file
-          echo "Checking file type:"
-          file "$ZIP_FILE"
-          
-          # List contents first
-          echo "Listing zip contents:"
-          unzip -l "$ZIP_FILE" || {
-            echo "Not a valid zip file. File might already be APK/AAB."
-            # If it's not a zip, just use the file directly
-            echo "apk_file=$ZIP_FILE" >> "$GITHUB_OUTPUT"
-            exit 0
-          }
-
-          EXTRACT_DIR="extracted-build"
-          mkdir -p "$EXTRACT_DIR"
-          
-          unzip -q "$ZIP_FILE" -d "$EXTRACT_DIR"
-          
-          echo "Contents after extraction:"
-          ls -R "$EXTRACT_DIR"
-          
-          # Find the APK or AAB file
-          APK_FILE=$(find "$EXTRACT_DIR" -type f \( -name "*.apk" -o -name "*.aab" \) | head -n 1)
-          
-          if [ -z "$APK_FILE" ]; then
-            echo "ERROR: No APK or AAB file found in the zip."
-            exit 1
-          fi
-
-          # Move it to a known location
-          FINAL_NAME="app-android.${APK_FILE##*.}"
-          mv "$APK_FILE" "$FINAL_NAME"
-          
-          echo "apk_file=$FINAL_NAME" >> "$GITHUB_OUTPUT"
-          ls -lh "$FINAL_NAME"
 
       - name: Upload artifact to Actions
         uses: actions/upload-artifact@v4
         with:
           name: android-build
-          path: ${{ steps.unzip_artifact.outputs.apk_file }}
+          path: ${{ steps.download_artifact.outputs.artifact_file }}
 
       - name: Create GitHub release and attach asset
         id: release
@@ -189,7 +141,7 @@ jobs:
             EAS Build ID: ${{ steps.eas_build.outputs.build_id }}
           draft: false
           prerelease: true
-          files: ${{ steps.unzip_artifact.outputs.apk_file }}
+          files: ${{ steps.download_artifact.outputs.artifact_file }}
 
       - name: Output release URL
         shell: bash
