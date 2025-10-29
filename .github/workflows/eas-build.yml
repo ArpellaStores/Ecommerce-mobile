@@ -98,8 +98,8 @@ jobs:
           echo "build_id=$BUILD_ID" >> "$GITHUB_OUTPUT"
           echo "artifact_url=$ARTIFACT_URL" >> "$GITHUB_OUTPUT"
 
-      - name: Download artifact
-        id: download_artifact
+      - name: Download APK
+        id: download_apk
         shell: bash
         run: |
           set -euo pipefail
@@ -122,41 +122,13 @@ jobs:
           echo "apk_file=$APK_FILE" >> "$GITHUB_OUTPUT"
           ls -lh "$APK_FILE"
 
-      - name: Extract APK from zip
-        id: extract_apk
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          ZIP_FILE="${{ steps.download_artifact.outputs.zip_file }}"
-          
-          # Extract the zip
-          unzip -q "$ZIP_FILE"
-          
-          # Find the APK file (should be in current directory after unzip)
-          APK_FILE=$(find . -maxdepth 1 -type f -name "*.apk" | head -n 1)
-          
-          if [ -z "$APK_FILE" ]; then
-            echo "ERROR: No APK file found after extraction."
-            echo "Contents:"
-            ls -lah
-            exit 1
-          fi
-
-          # Rename to a clean name
-          FINAL_NAME="app-android.apk"
-          mv "$APK_FILE" "$FINAL_NAME"
-          
-          echo "apk_file=$FINAL_NAME" >> "$GITHUB_OUTPUT"
-          ls -lh "$FINAL_NAME"
-
       - name: Upload artifact to Actions
         uses: actions/upload-artifact@v4
         with:
           name: android-build
-          path: ${{ steps.extract_apk.outputs.apk_file }}
+          path: ${{ steps.download_apk.outputs.apk_file }}
 
-      - name: Create GitHub release and attach asset
+      - name: Create GitHub release with download link
         id: release
         uses: ncipollo/release-action@v1
         with:
@@ -165,9 +137,11 @@ jobs:
           body: |
             Auto build from ${{ github.actor }} @ ${{ github.sha }}
             EAS Build ID: ${{ steps.eas_build.outputs.build_id }}
+            
+            📱 **Download APK:** ${{ steps.eas_build.outputs.artifact_url }}
           draft: false
           prerelease: true
-          artifacts: ${{ steps.extract_apk.outputs.apk_file }}
+          artifacts: ${{ steps.download_apk.outputs.apk_file }}
 
       - name: Output release URL
         shell: bash
