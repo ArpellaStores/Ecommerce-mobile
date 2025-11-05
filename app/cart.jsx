@@ -13,6 +13,7 @@ import {
   ActivityIndicator,
   Alert,
   Image,
+  Clipboard,
 } from 'react-native';
 import { useDispatch, useSelector } from 'react-redux';
 import { clearCart, updateItemQuantity, removeItemFromCart } from '../redux/slices/cartSlice';
@@ -21,6 +22,12 @@ import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
 import axios from 'axios';
 import { baseUrl } from '../constants/const.js';
+
+const STORE_LOCATION = {
+  latitude: -1.3922513,
+  longitude: 36.6829550,
+};
+const SHOP_NUMBER = '254704288802';
 
 const Checkout = () => {
   const dispatch = useDispatch();
@@ -41,7 +48,16 @@ const Checkout = () => {
   const [location, setLocation] = useState(null);
   const [paymentSuccess, setPaymentSuccess] = useState(false);
 
+  const [settings, setSettings] = useState({
+    deliveryFee: 50,
+    openingTime: '09:00',
+    closingTime: '18:00',
+    deliveryRadius: 50,
+  });
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
+
   useEffect(() => {
+    fetchSettings();
     (async () => {
       try {
         const { status } = await Location.requestForegroundPermissionsAsync();
@@ -51,6 +67,55 @@ const Checkout = () => {
       } catch {}
     })();
   }, []);
+
+  const fetchSettings = async () => {
+    try {
+      const response = await axios.get('https://api.arpellastore.com/settings');
+      if (response.data && Array.isArray(response.data)) {
+        const settingsMap = {};
+        response.data.forEach((setting) => {
+          if (setting.settingName === 'Delivery Fee') {
+            settingsMap.deliveryFee = parseFloat(setting.settingValue) || 50;
+          } else if (setting.settingName === 'Opening Time') {
+            settingsMap.openingTime = setting.settingValue || '09:00';
+          } else if (setting.settingName === 'Closing Time') {
+            settingsMap.closingTime = setting.settingValue || '18:00';
+          } else if (setting.settingName === 'deliveryRadius') {
+            settingsMap.deliveryRadius = parseFloat(setting.settingValue) || 50;
+          }
+        });
+        setSettings((prev) => ({ ...prev, ...settingsMap }));
+      }
+      setSettingsLoaded(true);
+    } catch (error) {
+      setSettingsLoaded(true);
+    }
+  };
+
+  const calculateDistance = (lat1, lon1, lat2, lon2) => {
+    const R = 6371;
+    const dLat = ((lat2 - lat1) * Math.PI) / 180;
+    const dLon = ((lon2 - lon1) * Math.PI) / 180;
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos((lat1 * Math.PI) / 180) *
+        Math.cos((lat2 * Math.PI) / 180) *
+        Math.sin(dLon / 2) *
+        Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+  };
+
+  const isWithinOperatingHours = () => {
+    const now = new Date();
+    const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    return currentTime >= settings.openingTime && currentTime <= settings.closingTime;
+  };
+
+  const copyToClipboard = (text) => {
+    Clipboard.setString(text);
+    Alert.alert('Copied', `${text} copied to clipboard`);
+  };
 
   const getCurrentLocation = async () => {
     setLocationLoading(true);
@@ -101,7 +166,7 @@ const Checkout = () => {
       };
     });
 
-  const calculateTotal = () => {
+  const calculateSubtotal = () => {
     const fused = buildFusedItems();
     return fused.reduce((acc, item) => {
       const qty = Number(item.quantity || 0);
@@ -111,6 +176,10 @@ const Checkout = () => {
       const unitPrice = discounted !== null && qty >= discountThreshold ? discounted : basePrice;
       return acc + unitPrice * qty;
     }, 0);
+  };
+
+  const calculateTotal = () => {
+    return calculateSubtotal() + settings.deliveryFee;
   };
 
   const normalizeMpesaInput = (raw) => {
@@ -162,6 +231,25 @@ const Checkout = () => {
       return;
     }
 
+    if (!isWithinOperatingHours()) {
+      Alert.alert(
+        'Outside Operating Hours',
+        `Your order will be processed and delivered on the next operating day. Our business hours are ${settings.openingTime} to ${settings.closingTime}. Do you want to proceed?`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Proceed',
+            onPress: () => processOrder(orderItems),
+          },
+        ]
+      );
+      return;
+    }
+
+    await processOrder(orderItems);
+  };
+
+  const processOrder = async (orderItems) => {
     setLoading(true);
 
     try {
@@ -177,6 +265,29 @@ const Checkout = () => {
         } catch {
           coords = { latitude: -1.28333, longitude: 36.81667 };
         }
+      }
+
+      const distance = calculateDistance(
+        STORE_LOCATION.latitude,
+        STORE_LOCATION.longitude,
+        coords.latitude,
+        coords.longitude
+      );
+
+      if (distance > settings.deliveryRadius) {
+        setLoading(false);
+        Alert.alert(
+          'Outside Delivery Zone',
+          `You are approximately ${distance.toFixed(1)} km away from our store. Our delivery radius is ${settings.deliveryRadius} km. Please call us at ${SHOP_NUMBER} to arrange delivery.`,
+          [
+            { text: 'Cancel', style: 'cancel' },
+            {
+              text: 'Copy Number',
+              onPress: () => copyToClipboard(SHOP_NUMBER),
+            },
+          ]
+        );
+        return;
       }
 
       const payload = {
@@ -294,7 +405,15 @@ const Checkout = () => {
   };
 
   const fusedForRender = buildFusedItems();
+  const subtotal = calculateSubtotal();
   const total = calculateTotal();
+
+  // compute distance to determine whether to show store number in modal
+  const distanceToStore = location
+    ? calculateDistance(STORE_LOCATION.latitude, STORE_LOCATION.longitude, location.latitude, location.longitude)
+    : null;
+
+  const showStoreNumberInModal = !location || (distanceToStore !== null && distanceToStore > Number(settings.deliveryRadius));
 
   return (
     <View style={styles.container}>
@@ -360,7 +479,19 @@ const Checkout = () => {
           />
 
           <View style={styles.totalContainer}>
-            <Text style={styles.totalText}>Total: KSH {total.toFixed(2)}</Text>
+            <View style={styles.costRow}>
+              <Text style={styles.costLabel}>Subtotal:</Text>
+              <Text style={styles.costValue}>KSH {subtotal.toFixed(2)}</Text>
+            </View>
+            <View style={styles.costRow}>
+              <Text style={styles.costLabel}>Delivery Fee:</Text>
+              <Text style={styles.costValue}>KSH {settings.deliveryFee.toFixed(2)}</Text>
+            </View>
+            <View style={styles.divider} />
+            <View style={styles.costRow}>
+              <Text style={styles.totalText}>Total:</Text>
+              <Text style={styles.totalText}>KSH {total.toFixed(2)}</Text>
+            </View>
             <TouchableOpacity style={styles.checkoutButton} onPress={openCheckoutModal}>
               <Text style={styles.checkoutButtonText}>Proceed to Checkout</Text>
             </TouchableOpacity>
@@ -368,7 +499,6 @@ const Checkout = () => {
         </>
       )}
 
-      {/* Edit Item Modal */}
       <Modal
         visible={editModalVisible}
         animationType="slide"
@@ -430,7 +560,6 @@ const Checkout = () => {
         </View>
       </Modal>
 
-      {/* Checkout Modal */}
       <Modal
         visible={showModal}
         animationType="slide"
@@ -453,6 +582,14 @@ const Checkout = () => {
                 <Text style={styles.successNote}>
                   Orders will be automatically created when payment is received on our end.
                 </Text>
+                {!isWithinOperatingHours() && (
+                  <View style={styles.afterHoursNotice}>
+                    <FontAwesome name="info-circle" size={20} color="#ff9800" />
+                    <Text style={styles.afterHoursText}>
+                      Your order was placed outside operating hours and will be delivered on the next operating day.
+                    </Text>
+                  </View>
+                )}
                 <TouchableOpacity style={styles.secondaryButton} onPress={closeCheckoutModal}>
                   <Text style={styles.secondaryButtonText}>Close</Text>
                 </TouchableOpacity>
@@ -460,6 +597,15 @@ const Checkout = () => {
             ) : (
               <ScrollView style={styles.modalScroll}>
                 <Text style={styles.modalTitle}>Checkout</Text>
+
+                {!isWithinOperatingHours() && (
+                  <View style={styles.warningBox}>
+                    <FontAwesome name="clock-o" size={20} color="#ff9800" />
+                    <Text style={styles.warningText}>
+                      We are currently outside operating hours ({settings.openingTime} - {settings.closingTime}). Your order will be processed and delivered on the next operating day.
+                    </Text>
+                  </View>
+                )}
 
                 <View style={styles.summaryTable}>
                   <View style={styles.tableHeader}>
@@ -497,6 +643,14 @@ const Checkout = () => {
                     );
                   })}
 
+                  <View style={styles.tableSubtotalRow}>
+                    <Text style={styles.tableSubtotalLabel}>SUBTOTAL</Text>
+                    <Text style={styles.tableSubtotalValue}>KSH {subtotal.toFixed(2)}</Text>
+                  </View>
+                  <View style={styles.tableSubtotalRow}>
+                    <Text style={styles.tableSubtotalLabel}>DELIVERY FEE</Text>
+                    <Text style={styles.tableSubtotalValue}>KSH {settings.deliveryFee.toFixed(2)}</Text>
+                  </View>
                   <View style={styles.tableTotalRow}>
                     <Text style={styles.tableTotalLabel}>TOTAL</Text>
                     <Text style={styles.tableTotalValue}>KSH {total.toFixed(2)}</Text>
@@ -541,6 +695,19 @@ const Checkout = () => {
                     )}
                   </TouchableOpacity>
                 </View>
+
+                {/* Removed the blue info box and delivery radius display as requested.
+                    Show store number in the modal only when location is not available
+                    or the user's location is outside the delivery radius. */}
+                {showStoreNumberInModal && (
+                  <View style={{ marginBottom: 12 }}>
+                    <TouchableOpacity onPress={() => copyToClipboard(SHOP_NUMBER)}>
+                      <Text style={styles.phoneText}>
+                        Questions? Call: {SHOP_NUMBER} (Tap to copy)
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
 
                 <TouchableOpacity
                   style={[styles.payButton, (loading || mpesaError) && { opacity: 0.6 }]}
@@ -601,8 +768,12 @@ const styles = StyleSheet.create({
   itemDetails: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 5 },
   itemTotal: { fontWeight: 'bold' },
   totalContainer: { marginTop: 20, padding: 15, backgroundColor: 'white', borderRadius: 8, borderWidth: 1, borderColor: '#ddd' },
-  totalText: { fontSize: 18, fontWeight: 'bold', textAlign: 'right', marginBottom: 15 },
-  checkoutButton: { backgroundColor: '#5a2428', padding: 15, borderRadius: 5, alignItems: 'center' },
+  costRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 },
+  costLabel: { fontSize: 15, color: '#666' },
+  costValue: { fontSize: 15, color: '#333' },
+  divider: { height: 1, backgroundColor: '#ddd', marginVertical: 8 },
+  totalText: { fontSize: 18, fontWeight: 'bold' },
+  checkoutButton: { backgroundColor: '#5a2428', padding: 15, borderRadius: 5, alignItems: 'center', marginTop: 10 },
   checkoutButtonText: { color: 'white', fontSize: 16, fontWeight: 'bold' },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' },
   modalContent: { width: '90%', maxHeight: '90%', backgroundColor: '#FFF8E1', borderRadius: 10, padding: 20 },
@@ -629,6 +800,9 @@ const styles = StyleSheet.create({
   tableRow: { flexDirection: 'row', alignItems: 'center', padding: 10, borderBottomWidth: 1, borderBottomColor: '#ddd' },
   tableCell: { flex: 1, textAlign: 'center' },
   tableImage: { width: 40, height: 40, borderRadius: 3 },
+  tableSubtotalRow: { flexDirection: 'row', justifyContent: 'space-between', padding: 10, backgroundColor: '#fafafa' },
+  tableSubtotalLabel: { fontSize: 14, fontWeight: '600' },
+  tableSubtotalValue: { fontSize: 14, fontWeight: '600' },
   tableTotalRow: { flexDirection: 'row', justifyContent: 'space-between', padding: 10, backgroundColor: '#f9f9f9' },
   tableTotalLabel: { fontSize: 16, fontWeight: 'bold' },
   tableTotalValue: { fontSize: 16, fontWeight: 'bold', color: '#5a2428' },
@@ -639,6 +813,9 @@ const styles = StyleSheet.create({
   locationText: { marginBottom: 10 },
   locationButton: { backgroundColor: '#5a2428', padding: 10, borderRadius: 5, alignItems: 'center' },
   locationButtonText: { color: 'white' },
+  infoBox: { backgroundColor: '#e3f2fd', padding: 15, borderRadius: 8, marginBottom: 20, borderWidth: 1, borderColor: '#90caf9' },
+  infoText: { fontSize: 13, color: '#333', marginBottom: 5 },
+  phoneText: { fontSize: 13, color: '#1976d2', marginTop: 5, fontWeight: 'bold', textDecorationLine: 'underline' },
   payButton: { backgroundColor: '#5a2428', padding: 15, borderRadius: 5, alignItems: 'center' },
   payButtonText: { color: 'white', fontSize: 16, fontWeight: 'bold' },
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', alignItems: 'center' },
@@ -652,6 +829,10 @@ const styles = StyleSheet.create({
   bottomNavigation: { flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center', height: 50, borderTopWidth: 1, borderTopColor: '#ccc', backgroundColor: '#FFF8E1' },
   navItem: { alignItems: 'center' },
   errorText: { color: 'red', marginTop: -10, marginBottom: 10, fontSize: 13 },
+  warningBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff8e1', padding: 10, borderRadius: 6, marginBottom: 12, borderWidth: 1, borderColor: '#ffecb3' },
+  warningText: { marginLeft: 8, color: '#333', flex: 1 },
+  afterHoursNotice: { flexDirection: 'row', alignItems: 'center', marginTop: 10 },
+  afterHoursText: { marginLeft: 8, color: '#333' },
 });
 
 export default Checkout;
