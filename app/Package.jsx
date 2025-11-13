@@ -1,12 +1,4 @@
 // src/screens/Package.js
-/**
- * Package Component - Order Management and Tracking
- *
- * Mirror of the web structure for order items:
- *  - getOrderItems normalizes server payload keys (orderitem / orderItems / order_item / items)
- *  - prefer item.product, fallback to redux product lookup by productId
- *  - compute unitPrice, qty, subtotal and order total same as web
- */
 
 import React, { useState, useEffect, useMemo } from 'react';
 import {
@@ -40,11 +32,6 @@ const THEME_COLORS = {
   }
 };
 
-/* -------------------------
-   Helpers (web-like)
-   ------------------------- */
-
-// normalize/resolve order items (matches web getOrderItems)
 const getOrderItems = (order) => {
   if (!order) return [];
   return (
@@ -57,10 +44,8 @@ const getOrderItems = (order) => {
   );
 };
 
-// compute unit price following the same priority as web
 const computeUnitPriceForItem = (item, productFromRedux) => {
   const productFromOrder = item.product || null;
-  // same priority as web: productFromOrder?.price || productFromOrder?.unitPrice || productFromRedux?.price || item.price || 0
   const unitPrice = Number(
     productFromOrder?.price ??
     productFromOrder?.unitPrice ??
@@ -85,9 +70,6 @@ const computeOrderTotal = (order, lookupProductFromRedux) => {
   }, 0);
 };
 
-/* -------------------------
-   UI: Status tracker (unchanged)
-   ------------------------- */
 const StatusProgressTracker = ({ status }) => {
   const statusLower = status ? status.toLowerCase() : 'pending';
   const statuses = ['pending', 'processing', 'delivering', 'delivered'];
@@ -134,9 +116,6 @@ const StatusProgressTracker = ({ status }) => {
   );
 };
 
-/* -------------------------
-   Order Detail Modal (web-like structure)
-   ------------------------- */
 const OrderDetailModal = ({ visible, order, onClose, lookupProductFromRedux }) => {
   if (!order) return null;
 
@@ -158,11 +137,10 @@ const OrderDetailModal = ({ visible, order, onClose, lookupProductFromRedux }) =
 
           <View style={{ height: 12 }} />
 
-          <ScrollView style={{ maxHeight: 420 }}>
+          <ScrollView style={{ maxHeight: 420 }} showsVerticalScrollIndicator={true}>
             {items && items.length > 0 ? (
               <>
                 {items.map((item, i) => {
-                  // follow web logic exactly
                   const productFromOrder = item.product || null;
                   const productFromRedux = lookupProductFromRedux(item.productId);
                   const name = productFromOrder?.name || productFromRedux?.name || productFromOrder?.title || `Product ${item.productId || i + 1}`;
@@ -233,15 +211,11 @@ const OrderDetailModal = ({ visible, order, onClose, lookupProductFromRedux }) =
   );
 };
 
-/* -------------------------
-   Order Item Card (uses getOrderItems like web)
-   ------------------------- */
 const OrderItem = ({ order, onTrackOrder, lookupProductFromRedux }) => {
   const displayOrderId = order.orderid || order.orderId || '';
   const statusLower = order.status ? order.status.toLowerCase() : 'pending';
   const statusColor = THEME_COLORS.status[statusLower] || THEME_COLORS.status.pending;
 
-  // Use the same getOrderItems to create the preview text (web parity)
   const items = getOrderItems(order);
   const itemsText = items && items.length > 0
     ? items.map(item => {
@@ -251,7 +225,6 @@ const OrderItem = ({ order, onTrackOrder, lookupProductFromRedux }) => {
       }).join(', ')
     : 'No items';
 
-  // compute total the same way as web
   const total = computeOrderTotal(order, lookupProductFromRedux);
 
   return (
@@ -286,9 +259,6 @@ const OrderItem = ({ order, onTrackOrder, lookupProductFromRedux }) => {
   );
 };
 
-/* -------------------------
-   Backdrop Loader
-   ------------------------- */
 const BackdropLoader = () => (
   <View style={styles.backdropContainer}>
     <View style={styles.loaderBox}>
@@ -298,9 +268,6 @@ const BackdropLoader = () => (
   </View>
 );
 
-/* -------------------------
-   Main Component
-   ------------------------- */
 const Package = () => {
   const router = useRouter();
   const [orders, setOrders] = useState([]);
@@ -308,12 +275,10 @@ const Package = () => {
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [modalVisible, setModalVisible] = useState(false);
 
-  // Redux user & products
   const user = useSelector(s => s.auth?.user || {});
   const productsById = useSelector(s => s.products?.productsById || {});
   const productsArray = useSelector(s => s.products?.products || []);
 
-  // current user phone from redux (guarded)
   const currentUserPhone = (user?.phone || user?.phoneNumber || user?.id || '').toString();
 
   const lookupProductFromRedux = useMemo(() => {
@@ -340,7 +305,6 @@ const Package = () => {
           return;
         }
 
-        // filter by user phone (or id) from Redux — tolerant match
         const userOrders = data.filter(order => {
           const orderUserId = (order.userId || order.user || '').toString();
           return orderUserId && currentUserPhone && (orderUserId === currentUserPhone || orderUserId === String(user?.id));
@@ -357,7 +321,6 @@ const Package = () => {
     };
 
     if (!currentUserPhone) {
-      // no phone available — show empty and stop loading
       setOrders([]);
       setLoading(false);
       return;
@@ -378,12 +341,15 @@ const Package = () => {
 
   return (
     <View style={styles.container}>
-      <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-        <Icon name="arrow-left" size={24} color="#000" />
-      </TouchableOpacity>
+      {/* Fixed Header */}
+      <View style={styles.headerContainer}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+          <Icon name="arrow-left" size={24} color="#000" />
+        </TouchableOpacity>
+        <Text style={styles.title}>My Orders</Text>
+      </View>
 
-      <Text style={styles.title}>My Orders</Text>
-
+      {/* Scrollable Content */}
       {loading ? (
         <BackdropLoader />
       ) : (
@@ -394,6 +360,7 @@ const Package = () => {
             <OrderItem order={item} onTrackOrder={handleTrackOrder} lookupProductFromRedux={lookupProductFromRedux} />
           )}
           contentContainerStyle={styles.listContainer}
+          showsVerticalScrollIndicator={true}
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
               <Icon name="shopping-cart" size={60} color="#ccc" />
@@ -410,6 +377,7 @@ const Package = () => {
         lookupProductFromRedux={lookupProductFromRedux}
       />
 
+      {/* Fixed Bottom Navigation */}
       <View style={styles.bottomNavigation}>
         <TouchableOpacity style={styles.navItem} onPress={() => router.push('./')}>
           <Icon name="home" size={24} color="#000" />
@@ -428,10 +396,6 @@ const Package = () => {
   );
 };
 
-/* -------------------------
-   Styles (kept same)
-   ------------------------- */
-
 const trackerStyles = StyleSheet.create({
   container: { paddingVertical: 18, width: '100%' },
   progressLine: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', position: 'relative', paddingHorizontal: 8 },
@@ -449,35 +413,136 @@ const trackerStyles = StyleSheet.create({
 });
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 16, backgroundColor: THEME_COLORS.secondary, paddingBottom: 80 },
-  title: { fontSize: 20, fontWeight: 'bold', textAlign: 'center', marginVertical: 16, marginTop: 40 },
-  backButton: { position: 'absolute', top: 20, left: 16, zIndex: 1 },
-  listContainer: { paddingBottom: 20 },
-  orderCard: { backgroundColor: '#fff', borderRadius: 8, padding: 15, marginBottom: 15, elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.22, shadowRadius: 2.22 },
-  orderCardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
+  container: { 
+    flex: 1, 
+    backgroundColor: THEME_COLORS.secondary,
+  },
+  headerContainer: {
+    paddingTop: 20,
+    paddingBottom: 10,
+    paddingHorizontal: 16,
+    backgroundColor: THEME_COLORS.secondary,
+  },
+  title: { 
+    fontSize: 20, 
+    fontWeight: 'bold', 
+    textAlign: 'center', 
+    marginVertical: 16, 
+    marginTop: 20,
+  },
+  backButton: { 
+    position: 'absolute', 
+    top: 20, 
+    left: 16, 
+    zIndex: 1 
+  },
+  listContainer: { 
+    paddingBottom: 80,
+    paddingHorizontal: 16,
+  },
+  orderCard: { 
+    backgroundColor: '#fff', 
+    borderRadius: 8, 
+    padding: 15, 
+    marginBottom: 15, 
+    elevation: 2, 
+    shadowColor: '#000', 
+    shadowOffset: { width: 0, height: 1 }, 
+    shadowOpacity: 0.22, 
+    shadowRadius: 2.22 
+  },
+  orderCardHeader: { 
+    flexDirection: 'row', 
+    justifyContent: 'space-between', 
+    alignItems: 'center', 
+    marginBottom: 10 
+  },
   orderNumber: { fontSize: 16, fontWeight: 'bold' },
   statusBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 12 },
   statusText: { color: '#fff', fontSize: 12, fontWeight: 'bold' },
   orderCardBody: { marginBottom: 10 },
   orderItemsText: { color: THEME_COLORS.text.secondary, marginBottom: 5 },
   totalText: { fontSize: 16, fontWeight: 'bold' },
-  orderCardFooter: { flexDirection: 'row', justifyContent: 'flex-end', borderTopWidth: 1, borderTopColor: THEME_COLORS.border, paddingTop: 10 },
-  trackButton: { backgroundColor: THEME_COLORS.primary, paddingHorizontal: 15, paddingVertical: 8, borderRadius: 4, flexDirection: 'row', alignItems: 'center', marginRight: 10 },
+  orderCardFooter: { 
+    flexDirection: 'row', 
+    justifyContent: 'flex-end', 
+    borderTopWidth: 1, 
+    borderTopColor: THEME_COLORS.border, 
+    paddingTop: 10 
+  },
+  trackButton: { 
+    backgroundColor: THEME_COLORS.primary, 
+    paddingHorizontal: 15, 
+    paddingVertical: 8, 
+    borderRadius: 4, 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    marginRight: 10 
+  },
   buttonIcon: { marginRight: 5 },
   trackButtonText: { color: '#fff', fontWeight: 'bold' },
   viewDetailsButton: { paddingHorizontal: 15, paddingVertical: 8 },
   viewDetailsText: { color: THEME_COLORS.primary, fontWeight: 'bold' },
-  emptyContainer: { alignItems: 'center', justifyContent: 'center', paddingVertical: 60 },
-  emptyText: { marginTop: 10, fontSize: 16, color: THEME_COLORS.text.secondary },
+  emptyContainer: { 
+    alignItems: 'center', 
+    justifyContent: 'center', 
+    paddingVertical: 60 
+  },
+  emptyText: { 
+    marginTop: 10, 
+    fontSize: 16, 
+    color: THEME_COLORS.text.secondary 
+  },
 
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.5)', justifyContent: 'center', alignItems: 'center' },
-  modalContent: { backgroundColor: '#fff', borderRadius: 8, width: '92%', maxHeight: '86%', padding: 16 },
+  modalOverlay: { 
+    flex: 1, 
+    backgroundColor: 'rgba(0, 0, 0, 0.5)', 
+    justifyContent: 'center', 
+    alignItems: 'center' 
+  },
+  modalContent: { 
+    backgroundColor: '#fff', 
+    borderRadius: 8, 
+    width: '92%', 
+    maxHeight: '86%', 
+    padding: 16 
+  },
   closeButton: { alignSelf: 'flex-end' },
-  modalTitle: { fontSize: 16, fontWeight: '700', marginBottom: 12, textAlign: 'center' },
-  modalRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 12, paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: '#f2f2f2' },
-  modalColImage: { width: 80, height: 80, marginRight: 12, justifyContent: 'center', alignItems: 'center' },
-  productThumb: { width: 80, height: 80, borderRadius: 6, backgroundColor: '#eee' },
-  noImageBox: { width: 80, height: 80, borderRadius: 6, backgroundColor: '#eee', justifyContent: 'center', alignItems: 'center' },
+  modalTitle: { 
+    fontSize: 16, 
+    fontWeight: '700', 
+    marginBottom: 12, 
+    textAlign: 'center' 
+  },
+  modalRow: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    marginBottom: 12, 
+    paddingVertical: 6, 
+    borderBottomWidth: 1, 
+    borderBottomColor: '#f2f2f2' 
+  },
+  modalColImage: { 
+    width: 80, 
+    height: 80, 
+    marginRight: 12, 
+    justifyContent: 'center', 
+    alignItems: 'center' 
+  },
+  productThumb: { 
+    width: 80, 
+    height: 80, 
+    borderRadius: 6, 
+    backgroundColor: '#eee' 
+  },
+  noImageBox: { 
+    width: 80, 
+    height: 80, 
+    borderRadius: 6, 
+    backgroundColor: '#eee', 
+    justifyContent: 'center', 
+    alignItems: 'center' 
+  },
   modalColDetails: { flex: 1, paddingRight: 8 },
   modalColQty: { width: 110, alignItems: 'flex-end' },
   itemName: { fontWeight: '700', marginBottom: 4 },
@@ -485,19 +550,72 @@ const styles = StyleSheet.create({
   itemSmall: { color: '#999', fontSize: 12, marginTop: 4 },
   itemSubtotal: { fontWeight: '700', marginTop: 8 },
   hr: { height: 1, backgroundColor: '#eee', marginVertical: 12 },
-  totalRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6 },
-  metaRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 6 },
+  totalRow: { 
+    flexDirection: 'row', 
+    justifyContent: 'space-between', 
+    paddingVertical: 6 
+  },
+  metaRow: { 
+    flexDirection: 'row', 
+    justifyContent: 'space-between', 
+    marginTop: 6 
+  },
   metaLabel: { color: THEME_COLORS.text.secondary },
   metaValue: { fontWeight: '600' },
-  modalCloseBtn: { backgroundColor: THEME_COLORS.primary, paddingHorizontal: 18, paddingVertical: 10, borderRadius: 6 },
+  modalCloseBtn: { 
+    backgroundColor: THEME_COLORS.primary, 
+    paddingHorizontal: 18, 
+    paddingVertical: 10, 
+    borderRadius: 6 
+  },
 
-  backdropContainer: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(255,255,255,0.8)', justifyContent: 'center', alignItems: 'center', zIndex: 999 },
-  loaderBox: { backgroundColor: '#fff', padding: 20, borderRadius: 8, alignItems: 'center', elevation: 5, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.25, shadowRadius: 3.84 },
+  backdropContainer: { 
+    ...StyleSheet.absoluteFillObject, 
+    backgroundColor: 'rgba(255,255,255,0.8)', 
+    justifyContent: 'center', 
+    alignItems: 'center', 
+    zIndex: 999 
+  },
+  loaderBox: { 
+    backgroundColor: '#fff', 
+    padding: 20, 
+    borderRadius: 8, 
+    alignItems: 'center', 
+    elevation: 5, 
+    shadowColor: '#000', 
+    shadowOffset: { width: 0, height: 2 }, 
+    shadowOpacity: 0.25, 
+    shadowRadius: 3.84 
+  },
   loadingText: { marginTop: 10, color: '#333' },
 
-  bottomNavigation: { position: 'absolute', bottom: 0, left: 0, right: 0, flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center', height: 60, borderTopWidth: 1, borderTopColor: '#ccc', backgroundColor: THEME_COLORS.secondary },
-  navItem: { alignItems: 'center', flex: 1, paddingVertical: 8 },
-  activeNavItem: { borderBottomWidth: 2, borderBottomColor: THEME_COLORS.primary },
+  bottomNavigation: { 
+    position: 'absolute', 
+    bottom: 0, 
+    left: 0, 
+    right: 0, 
+    flexDirection: 'row', 
+    justifyContent: 'space-around', 
+    alignItems: 'center', 
+    height: 60, 
+    borderTopWidth: 1, 
+    borderTopColor: '#ccc', 
+    backgroundColor: THEME_COLORS.secondary,
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+  },
+  navItem: { 
+    alignItems: 'center', 
+    flex: 1, 
+    paddingVertical: 8 
+  },
+  activeNavItem: { 
+    borderBottomWidth: 2, 
+    borderBottomColor: THEME_COLORS.primary 
+  },
 });
 
 export default Package;

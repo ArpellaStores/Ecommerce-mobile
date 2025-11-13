@@ -94,13 +94,9 @@ function AppContent() {
         try {
           const pending = Updates.manifest || (await Updates.getPendingUpdateAsync()) || {}
           updateId = pending.id || pending.commitTime || pending.releaseId || null
-        } catch {
-          // ignore manifest parsing errors
-        }
+        } catch {}
 
-        if (updateId && promptedUpdateIdRef.current === updateId) {
-          return
-        }
+        if (updateId && promptedUpdateIdRef.current === updateId) return
         if (updateId) promptedUpdateIdRef.current = updateId
 
         if (showToast) {
@@ -121,9 +117,7 @@ function AppContent() {
                 { text: 'Later', style: 'cancel' },
                 {
                   text: 'Install on next launch',
-                  onPress: () => {
-                    toast.show('Will install on next app launch', { duration: 2000 })
-                  },
+                  onPress: () => toast.show('Will install on next app launch', { duration: 2000 }),
                 },
                 {
                   text: 'Install now',
@@ -131,9 +125,7 @@ function AppContent() {
                     try {
                       await Updates.reloadAsync()
                     } catch {
-                      toast.show('Failed to apply update; please restart the app', {
-                        duration: 4000,
-                      })
+                      toast.show('Failed to apply update; please restart the app', { duration: 4000 })
                     }
                   },
                 },
@@ -145,17 +137,13 @@ function AppContent() {
                     try {
                       await Updates.reloadAsync()
                     } catch {
-                      toast.show('Failed to apply update; please restart the app', {
-                        duration: 4000,
-                      })
+                      toast.show('Failed to apply update; please restart the app', { duration: 4000 })
                     }
                   },
                 },
                 {
                   text: 'Install on next launch',
-                  onPress: () => {
-                    toast.show('Will install on next app launch', { duration: 2000 })
-                  },
+                  onPress: () => toast.show('Will install on next app launch', { duration: 2000 }),
                 },
                 { text: 'Later', style: 'cancel' },
               ]
@@ -222,7 +210,9 @@ export default function RootLayout() {
 const styles = StyleSheet.create({
   fullScreen: {
     flex: 1,
-    backgroundColor: '#FFF8E1',
+    backgroundColor: '#FFF8E1', // matches your app background
+    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight || 16 : 16,
+    paddingBottom: 16,
   },
   loaderContainer: {
     ...StyleSheet.absoluteFillObject,
