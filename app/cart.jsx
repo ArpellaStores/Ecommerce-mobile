@@ -10,7 +10,6 @@ import {
   ActivityIndicator,
   Alert,
   Image,
-  Clipboard,
   Platform,
 } from 'react-native'
 import { useDispatch, useSelector } from 'react-redux'
@@ -20,6 +19,9 @@ import * as Location from 'expo-location'
 import { useRouter } from 'expo-router'
 import axios from 'axios'
 import { baseUrl } from '../constants/const.js'
+import * as Clipboard from 'expo-clipboard'
+import BottomNav from '../components/BottomNav'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
 
 const STORE_LOCATION = {
   latitude: -1.3922513,
@@ -28,15 +30,19 @@ const STORE_LOCATION = {
 const SHOP_NUMBER = '254704288802'
 
 const TOTAL_CONTAINER_HEIGHT = 150
-const BOTTOM_NAV_HEIGHT = 56
+const NAV_HEIGHT = 64 // matches components/BottomNav NAVBAR_HEIGHT
 const H_GUTTER = 15
 
 const Checkout = () => {
   const dispatch = useDispatch()
   const router = useRouter()
+  const insets = useSafeAreaInsets()
+
   const userPhone = useSelector((s) => s.auth.user?.phone)
   const cartItems = useSelector((s) => s.cart.items || {})
   const products = useSelector((s) => s.products.products || [])
+
+  const cartCount = Object.values(cartItems || {}).reduce((sum, it) => sum + (Number(it?.quantity) || 0), 0)
 
   const [loading, setLoading] = useState(false)
   const [locationLoading, setLocationLoading] = useState(false)
@@ -114,9 +120,13 @@ const Checkout = () => {
     return currentTime >= settings.openingTime && currentTime <= settings.closingTime
   }
 
-  const copyToClipboard = (text) => {
-    Clipboard.setString(text)
-    Alert.alert('Copied', `${text} copied to clipboard`)
+  const copyToClipboard = async (text) => {
+    try {
+      await Clipboard.setStringAsync(String(text))
+      Alert.alert('Copied', `${text} copied to clipboard`)
+    } catch {
+      Alert.alert('Copy Failed', 'Could not copy to clipboard')
+    }
   }
 
   const getCurrentLocation = async () => {
@@ -143,7 +153,7 @@ const Checkout = () => {
     }
   }
 
-  const getProductById = (id) => products.find((p) => p.id === parseInt(id, 10)) || {}
+  const getProductById = (id) => products.find((p) => p.id === Number(id)) || {}
 
   const buildFusedItems = () =>
     Object.entries(cartItems).map(([id, item]) => {
@@ -417,7 +427,7 @@ const Checkout = () => {
     !location || (distanceToStore !== null && distanceToStore > Number(settings.deliveryRadius))
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { paddingBottom: Math.max(insets.bottom, 12) }]}>
       <View style={styles.headerRow}>
         <Text style={styles.cartTitle}>Shopping Cart</Text>
         {fusedForRender.length > 0 && (
@@ -438,7 +448,10 @@ const Checkout = () => {
       ) : (
         <ScrollView
           style={{ flex: 1 }}
-          contentContainerStyle={{ paddingBottom: TOTAL_CONTAINER_HEIGHT + BOTTOM_NAV_HEIGHT + 24 }}
+          contentContainerStyle={{
+            paddingBottom: TOTAL_CONTAINER_HEIGHT + NAV_HEIGHT + Math.max(insets.bottom, 12) + 24,
+            paddingHorizontal: H_GUTTER,
+          }}
           showsVerticalScrollIndicator={true}
         >
           {fusedForRender.map((item) => {
@@ -664,41 +677,29 @@ const Checkout = () => {
         </View>
       </Modal>
 
-      <View style={[styles.bottomNavigation, { position: 'absolute', left: 0, right: 0, bottom: 0, height: BOTTOM_NAV_HEIGHT }]}>
-        <TouchableOpacity style={styles.navItem} onPress={() => router.replace('./')}>
-          <FontAwesome name="home" size={24} color="black" />
-          <Text>Home</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.navItem} onPress={() => router.replace('./Package')}>
-          <FontAwesome name="ticket" size={24} color="black" />
-          <Text>My Orders</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.navItem} onPress={() => router.replace('./Profile')}>
-          <FontAwesome name="user" size={24} color="black" />
-          <Text>Profile</Text>
-        </TouchableOpacity>
-      </View>
+      {/* Reusable bottom navigation component */}
+      <BottomNav cartCount={cartCount} />
     </View>
   )
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#FFF8E1', paddingHorizontal: H_GUTTER, paddingTop: Platform.OS === 'android' ? 20 : 36 },
-  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
+  container: { flex: 1, backgroundColor: '#FFF8E1', paddingTop: Platform.OS === 'android' ? 20 : 36 },
+  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, paddingHorizontal: H_GUTTER },
   cartTitle: { fontSize: 24, fontWeight: 'bold' },
   clearCartText: { color: '#d32f2f', fontSize: 14, fontWeight: 'bold' },
   emptyCartContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   emptyCartText: { fontSize: 18, color: '#888', marginVertical: 20 },
   continueShopping: { backgroundColor: '#5a2428', padding: 10, borderRadius: 5 },
   continueShoppingText: { color: '#fff', fontWeight: 'bold' },
-  cartItem: { backgroundColor: 'white', marginBottom: 10, padding: 15, borderRadius: 8, borderWidth: 1, borderColor: '#ddd' },
+  cartItem: { backgroundColor: 'white', marginBottom: 10, padding: 15, borderRadius: 8, borderWidth: 1, borderColor: '#ddd', marginHorizontal: H_GUTTER },
   cartItemRow: { flexDirection: 'row', alignItems: 'center' },
   cartItemImage: { width: 60, height: 60, borderRadius: 5, marginRight: 10 },
   cartItemDetails: { flex: 1 },
   itemName: { fontSize: 16, fontWeight: 'bold', marginBottom: 8 },
   itemDetails: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 5 },
   itemTotal: { fontWeight: 'bold' },
-  totalContainer: { padding: 15, backgroundColor: 'white', borderRadius: 8, borderWidth: 1, borderColor: '#ddd', shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 4, elevation: 6 },
+  totalContainer: { padding: 15, backgroundColor: 'white', borderRadius: 8, borderWidth: 1, borderColor: '#ddd', shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 4, elevation: 6, marginHorizontal: H_GUTTER },
   costRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 },
   costLabel: { fontSize: 15, color: '#666' },
   costValue: { fontSize: 15, color: '#333' },
@@ -739,7 +740,7 @@ const styles = StyleSheet.create({
   tableTotalValue: { fontSize: 16, fontWeight: 'bold', color: '#5a2428' },
   inputLabel: { fontSize: 14, fontWeight: 'bold', marginBottom: 5 },
   input: { backgroundColor: 'white', borderWidth: 1, borderColor: '#ddd', borderRadius: 5, padding: 12, marginBottom: 15 },
-  locationContainer: { marginBottom: 20, backgroundColor: 'white', borderWidth: 1, borderColor: '#ddd', borderRadius: 5, padding: 12 },
+  locationContainer: { marginBottom: 20, backgroundColor: 'white', borderWidth: 1, borderColor: '#ddd', borderRadius: 5, padding: 12, marginHorizontal: H_GUTTER },
   locationLabel: { fontSize: 14, fontWeight: 'bold', marginBottom: 5 },
   locationText: { marginBottom: 10 },
   locationButton: { backgroundColor: '#5a2428', padding: 10, borderRadius: 5, alignItems: 'center' },
@@ -757,8 +758,6 @@ const styles = StyleSheet.create({
   successNote: { fontSize: 13, color: '#666', textAlign: 'center', marginBottom: 20, fontStyle: 'italic', lineHeight: 20 },
   secondaryButton: { backgroundColor: '#5a2428', paddingHorizontal: 30, paddingVertical: 12, borderRadius: 8, marginTop: 10 },
   secondaryButtonText: { color: '#fff', fontWeight: 'bold', fontSize: 16 },
-  bottomNavigation: { flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center', borderTopWidth: 1, borderTopColor: '#ccc', backgroundColor: '#FFF8E1' },
-  navItem: { alignItems: 'center' },
   errorText: { color: 'red', marginTop: -10, marginBottom: 10, fontSize: 13 },
   warningBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff8e1', padding: 10, borderRadius: 6, marginBottom: 12, borderWidth: 1, borderColor: '#ffecb3' },
   warningText: { marginLeft: 8, color: '#333', flex: 1 },

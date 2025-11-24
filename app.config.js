@@ -19,7 +19,6 @@ export default ({ config }) => ({
       "**/*"
     ],
 
-    // Change this from policy to explicit version
     runtimeVersion: "1.0.1",
 
     updates: {

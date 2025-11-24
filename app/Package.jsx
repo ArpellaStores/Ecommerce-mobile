@@ -1,6 +1,5 @@
 // src/screens/Package.js
-
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react'
 import {
   Text,
   View,
@@ -10,14 +9,18 @@ import {
   FlatList,
   ActivityIndicator,
   Image,
-  ScrollView
-} from 'react-native';
-import Icon from 'react-native-vector-icons/FontAwesome';
-import { useRouter } from 'expo-router';
-import axios from 'axios';
-import { baseUrl } from '../constants/const';
-import { toast } from 'react-native-toast-notifications';
-import { useSelector } from 'react-redux';
+  ScrollView,
+} from 'react-native'
+import Icon from 'react-native-vector-icons/FontAwesome'
+import { useRouter } from 'expo-router'
+import axios from 'axios'
+import { baseUrl } from '../constants/const'
+import { toast } from 'react-native-toast-notifications'
+import { useSelector } from 'react-redux'
+import BottomNav from '../components/BottomNav'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
+
+const NAV_HEIGHT = 64
 
 const THEME_COLORS = {
   primary: '#D67D00',
@@ -28,70 +31,64 @@ const THEME_COLORS = {
     pending: '#D67D00',
     processing: '#2196F3',
     delivering: '#8BC34A',
-    delivered: '#4CAF50'
-  }
-};
+    delivered: '#4CAF50',
+  },
+}
 
 const getOrderItems = (order) => {
-  if (!order) return [];
-  return (
-    order.orderitem ||
-    order.orderItems ||
-    order.order_item ||
-    order.items ||
-    order.itemsOrdered ||
-    []
-  );
-};
+  if (!order) return []
+  return order.orderitem || order.orderItems || order.order_item || order.items || order.itemsOrdered || []
+}
 
 const computeUnitPriceForItem = (item, productFromRedux) => {
-  const productFromOrder = item.product || null;
-  const unitPrice = Number(
-    productFromOrder?.price ??
-    productFromOrder?.unitPrice ??
-    productFromRedux?.price ??
-    item.price ??
-    0
-  ) || 0;
-  return unitPrice;
-};
+  const productFromOrder = item.product || null
+  const unitPrice =
+    Number(
+      productFromOrder?.price ??
+        productFromOrder?.unitPrice ??
+        productFromRedux?.price ??
+        item.price ??
+        0
+    ) || 0
+  return unitPrice
+}
 
 const computeItemSubtotal = (item, productFromRedux) => {
-  const unitPrice = computeUnitPriceForItem(item, productFromRedux);
-  const qty = Number(item.quantity || 0);
-  return unitPrice * qty;
-};
+  const unitPrice = computeUnitPriceForItem(item, productFromRedux)
+  const qty = Number(item.quantity || 0)
+  return unitPrice * qty
+}
 
 const computeOrderTotal = (order, lookupProductFromRedux) => {
-  const items = getOrderItems(order);
+  const items = getOrderItems(order)
   return items.reduce((acc, it) => {
-    const productFromRedux = lookupProductFromRedux(it.productId);
-    return acc + computeItemSubtotal(it, productFromRedux);
-  }, 0);
-};
+    const productFromRedux = lookupProductFromRedux(it.productId)
+    return acc + computeItemSubtotal(it, productFromRedux)
+  }, 0)
+}
 
 const StatusProgressTracker = ({ status }) => {
-  const statusLower = status ? status.toLowerCase() : 'pending';
-  const statuses = ['pending', 'processing', 'delivering', 'delivered'];
-  const currentIndex = statuses.indexOf(statusLower);
+  const statusLower = status ? status.toLowerCase() : 'pending'
+  const statuses = ['pending', 'processing', 'delivering', 'delivered']
+  const currentIndex = statuses.indexOf(statusLower)
 
   return (
     <View style={trackerStyles.container}>
       <View style={trackerStyles.progressLine}>
         {statuses.map((step, index) => {
-          const isActive = index <= currentIndex;
+          const isActive = index <= currentIndex
           return (
             <React.Fragment key={step}>
               {index > 0 && (
-                <View style={[trackerStyles.line, isActive ? trackerStyles.activeLine : trackerStyles.inactiveLine]} />
+                <View
+                  style={[trackerStyles.line, isActive ? trackerStyles.activeLine : trackerStyles.inactiveLine]}
+                />
               )}
               <View style={[trackerStyles.circle, isActive ? trackerStyles.activeCircle : trackerStyles.inactiveCircle]}>
                 {isActive && (
                   <Icon
                     name={
-                      step === 'pending' ? 'clock-o' :
-                      step === 'processing' ? 'cogs' :
-                      step === 'delivering' ? 'truck' : 'check'
+                      step === 'pending' ? 'clock-o' : step === 'processing' ? 'cogs' : step === 'delivering' ? 'truck' : 'check'
                     }
                     size={14}
                     color="#fff"
@@ -99,27 +96,34 @@ const StatusProgressTracker = ({ status }) => {
                 )}
               </View>
             </React.Fragment>
-          );
+          )
         })}
       </View>
 
       <View style={trackerStyles.labelsContainer}>
-        {['Pending','Processing','Delivering','Delivered'].map((label, idx) => (
+        {['Pending', 'Processing', 'Delivering', 'Delivered'].map((label, idx) => (
           <View key={label} style={trackerStyles.labelWrapper}>
-            <Text style={[trackerStyles.label, idx <= (['pending','processing','delivering','delivered'].indexOf((status || '').toLowerCase()) ) ? trackerStyles.activeLabel : trackerStyles.inactiveLabel]}>
+            <Text
+              style={[
+                trackerStyles.label,
+                idx <= (['pending', 'processing', 'delivering', 'delivered'].indexOf((status || '').toLowerCase()))
+                  ? trackerStyles.activeLabel
+                  : trackerStyles.inactiveLabel,
+              ]}
+            >
               {label}
             </Text>
           </View>
         ))}
       </View>
     </View>
-  );
-};
+  )
+}
 
 const OrderDetailModal = ({ visible, order, onClose, lookupProductFromRedux }) => {
-  if (!order) return null;
+  if (!order) return null
 
-  const items = getOrderItems(order);
+  const items = getOrderItems(order)
 
   return (
     <Modal animationType="slide" transparent visible={visible} onRequestClose={onClose}>
@@ -129,9 +133,7 @@ const OrderDetailModal = ({ visible, order, onClose, lookupProductFromRedux }) =
             <Icon name="times" size={20} color="#000" />
           </TouchableOpacity>
 
-          <Text style={styles.modalTitle}>
-            Order Details – ORDER {String(order?.orderid || order?.orderId || '').toUpperCase()}
-          </Text>
+          <Text style={styles.modalTitle}>Order Details – ORDER {String(order?.orderid || order?.orderId || '').toUpperCase()}</Text>
 
           <StatusProgressTracker status={order.status} />
 
@@ -141,13 +143,17 @@ const OrderDetailModal = ({ visible, order, onClose, lookupProductFromRedux }) =
             {items && items.length > 0 ? (
               <>
                 {items.map((item, i) => {
-                  const productFromOrder = item.product || null;
-                  const productFromRedux = lookupProductFromRedux(item.productId);
-                  const name = productFromOrder?.name || productFromRedux?.name || productFromOrder?.title || `Product ${item.productId || i + 1}`;
-                  const unitPrice = computeUnitPriceForItem(item, productFromRedux);
-                  const qty = Number(item.quantity || 0);
-                  const subtotal = unitPrice * qty;
-                  const imageUri = productFromRedux?.productImage || productFromOrder?.imageUrl || productFromOrder?.productImage || null;
+                  const productFromOrder = item.product || null
+                  const productFromRedux = lookupProductFromRedux(item.productId)
+                  const name =
+                    productFromOrder?.name ||
+                    productFromRedux?.name ||
+                    productFromOrder?.title ||
+                    `Product ${item.productId || i + 1}`
+                  const unitPrice = computeUnitPriceForItem(item, productFromRedux)
+                  const qty = Number(item.quantity || 0)
+                  const subtotal = unitPrice * qty
+                  const imageUri = productFromRedux?.productImage || productFromOrder?.imageUrl || productFromOrder?.productImage || null
 
                   return (
                     <View key={String(i)} style={styles.modalRow}>
@@ -172,7 +178,7 @@ const OrderDetailModal = ({ visible, order, onClose, lookupProductFromRedux }) =
                         <Text style={styles.itemSubtotal}>Subtotal: KSH {subtotal.toFixed(2)}</Text>
                       </View>
                     </View>
-                  );
+                  )
                 })}
 
                 <View style={styles.hr} />
@@ -189,7 +195,9 @@ const OrderDetailModal = ({ visible, order, onClose, lookupProductFromRedux }) =
                   </View>
                   <View style={styles.metaRow}>
                     <Text style={styles.metaLabel}>Placed:</Text>
-                    <Text style={styles.metaValue}>{order.createdAt ? new Date(order.createdAt).toLocaleString() : (order.date ? new Date(order.date).toLocaleString() : '—')}</Text>
+                    <Text style={styles.metaValue}>
+                      {order.createdAt ? new Date(order.createdAt).toLocaleString() : order.date ? new Date(order.date).toLocaleString() : '—'}
+                    </Text>
                   </View>
                 </View>
               </>
@@ -208,33 +216,34 @@ const OrderDetailModal = ({ visible, order, onClose, lookupProductFromRedux }) =
         </View>
       </View>
     </Modal>
-  );
-};
+  )
+}
 
 const OrderItem = ({ order, onTrackOrder, lookupProductFromRedux }) => {
-  const displayOrderId = order.orderid || order.orderId || '';
-  const statusLower = order.status ? order.status.toLowerCase() : 'pending';
-  const statusColor = THEME_COLORS.status[statusLower] || THEME_COLORS.status.pending;
+  const displayOrderId = order.orderid || order.orderId || ''
+  const statusLower = order.status ? order.status.toLowerCase() : 'pending'
+  const statusColor = THEME_COLORS.status[statusLower] || THEME_COLORS.status.pending
 
-  const items = getOrderItems(order);
-  const itemsText = items && items.length > 0
-    ? items.map(item => {
-        const productFromOrder = item.product || null;
-        const productFromRedux = lookupProductFromRedux(item.productId);
-        return productFromOrder?.name || productFromRedux?.name || 'Product';
-      }).join(', ')
-    : 'No items';
+  const items = getOrderItems(order)
+  const itemsText =
+    items && items.length > 0
+      ? items
+          .map((item) => {
+            const productFromOrder = item.product || null
+            const productFromRedux = lookupProductFromRedux(item.productId)
+            return productFromOrder?.name || productFromRedux?.name || 'Product'
+          })
+          .join(', ')
+      : 'No items'
 
-  const total = computeOrderTotal(order, lookupProductFromRedux);
+  const total = computeOrderTotal(order, lookupProductFromRedux)
 
   return (
     <View style={styles.orderCard}>
       <View style={styles.orderCardHeader}>
         <Text style={styles.orderNumber}>Order #{displayOrderId}</Text>
         <View style={[styles.statusBadge, { backgroundColor: statusColor }]}>
-          <Text style={styles.statusText}>
-            {order.status && (order.status.charAt(0).toUpperCase() + order.status.slice(1))}
-          </Text>
+          <Text style={styles.statusText}>{order.status && order.status.charAt(0).toUpperCase() + order.status.slice(1)}</Text>
         </View>
       </View>
 
@@ -256,8 +265,8 @@ const OrderItem = ({ order, onTrackOrder, lookupProductFromRedux }) => {
         </TouchableOpacity>
       </View>
     </View>
-  );
-};
+  )
+}
 
 const BackdropLoader = () => (
   <View style={styles.backdropContainer}>
@@ -266,82 +275,96 @@ const BackdropLoader = () => (
       <Text style={styles.loadingText}>Loading orders...</Text>
     </View>
   </View>
-);
+)
 
 const Package = () => {
-  const router = useRouter();
-  const [orders, setOrders] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [selectedOrder, setSelectedOrder] = useState(null);
-  const [modalVisible, setModalVisible] = useState(false);
+  const router = useRouter()
+  const insets = useSafeAreaInsets()
 
-  const user = useSelector(s => s.auth?.user || {});
-  const productsById = useSelector(s => s.products?.productsById || {});
-  const productsArray = useSelector(s => s.products?.products || []);
+  const [orders, setOrders] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [selectedOrder, setSelectedOrder] = useState(null)
+  const [modalVisible, setModalVisible] = useState(false)
 
-  const currentUserPhone = (user?.phone || user?.phoneNumber || user?.id || '').toString();
+  const user = useSelector((s) => s.auth?.user || {})
+  const productsById = useSelector((s) => s.products?.productsById || {})
+  const productsArray = useSelector((s) => s.products?.products || [])
+  const cartState = useSelector((s) => s.cart || {})
+  const cartItemsCandidate = cartState.items ?? cartState.cartItems ?? []
+  const cartCount = Array.isArray(cartItemsCandidate)
+    ? cartItemsCandidate.reduce((sum, it) => sum + (Number(it?.quantity) || 0), 0)
+    : cartItemsCandidate && typeof cartItemsCandidate === 'object'
+    ? Object.values(cartItemsCandidate).reduce((sum, it) => sum + (Number(it?.quantity) || 0), 0)
+    : 0
+
+  const currentUserPhone = (user?.phone || user?.phoneNumber || user?.id || '').toString()
 
   const lookupProductFromRedux = useMemo(() => {
     return (productId) => {
-      if (!productId) return null;
-      if (productsById && productsById[productId]) return productsById[productId];
-      const found = Object.values(productsById || {}).find(p =>
-        String(p.id) === String(productId) || String(p._id) === String(productId) || String(p.productId) === String(productId)
-      );
-      if (found) return found;
-      return (productsArray || []).find(p => String(p.id) === String(productId) || String(p._id) === String(productId) || String(p.productId) === String(productId)) || null;
-    };
-  }, [productsById, productsArray]);
+      if (!productId) return null
+      if (productsById && productsById[productId]) return productsById[productId]
+      const found = Object.values(productsById || {}).find(
+        (p) =>
+          String(p.id) === String(productId) || String(p._id) === String(productId) || String(p.productId) === String(productId)
+      )
+      if (found) return found
+      return (
+        (productsArray || []).find(
+          (p) =>
+            String(p.id) === String(productId) || String(p._id) === String(productId) || String(p.productId) === String(productId)
+        ) || null
+      )
+    }
+  }, [productsById, productsArray])
 
   useEffect(() => {
     const fetchOrders = async () => {
       try {
-        setLoading(true);
-        const response = await axios.get(`${baseUrl}/orders`);
-        const data = response?.data;
+        setLoading(true)
+        const response = await axios.get(`${baseUrl}/orders`)
+        const data = response?.data
         if (!Array.isArray(data)) {
-          setOrders([]);
-          setLoading(false);
-          return;
+          setOrders([])
+          setLoading(false)
+          return
         }
 
-        const userOrders = data.filter(order => {
-          const orderUserId = (order.userId || order.user || '').toString();
-          return orderUserId && currentUserPhone && (orderUserId === currentUserPhone || orderUserId === String(user?.id));
-        });
+        const userOrders = data.filter((order) => {
+          const orderUserId = (order.userId || order.user || '').toString()
+          return orderUserId && currentUserPhone && (orderUserId === currentUserPhone || orderUserId === String(user?.id))
+        })
 
-        setOrders(userOrders);
+        setOrders(userOrders)
       } catch (error) {
-        console.error('Error fetching orders:', error);
-        toast.show && toast.show('Failed to load orders. Please try again later.', { type: 'error' });
-        setOrders([]);
+        console.error('Error fetching orders:', error)
+        toast.show && toast.show('Failed to load orders. Please try again later.', { type: 'error' })
+        setOrders([])
       } finally {
-        setLoading(false);
+        setLoading(false)
       }
-    };
-
-    if (!currentUserPhone) {
-      setOrders([]);
-      setLoading(false);
-      return;
     }
 
-    fetchOrders();
-  }, [currentUserPhone, user]);
+    if (!currentUserPhone) {
+      setOrders([])
+      setLoading(false)
+      return
+    }
+
+    fetchOrders()
+  }, [currentUserPhone, user])
 
   const handleTrackOrder = (order) => {
-    setSelectedOrder(order);
-    setModalVisible(true);
-  };
+    setSelectedOrder(order)
+    setModalVisible(true)
+  }
 
   const closeModal = () => {
-    setModalVisible(false);
-    setSelectedOrder(null);
-  };
+    setModalVisible(false)
+    setSelectedOrder(null)
+  }
 
   return (
-    <View style={styles.container}>
-      {/* Fixed Header */}
+    <View style={[styles.container, { paddingBottom: Math.max(insets.bottom, 12) }]}>
       <View style={styles.headerContainer}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
           <Icon name="arrow-left" size={24} color="#000" />
@@ -349,17 +372,14 @@ const Package = () => {
         <Text style={styles.title}>My Orders</Text>
       </View>
 
-      {/* Scrollable Content */}
       {loading ? (
         <BackdropLoader />
       ) : (
         <FlatList
           data={orders}
-          keyExtractor={(item) => (item.orderid || item.orderId || Math.random().toString())}
-          renderItem={({ item }) => (
-            <OrderItem order={item} onTrackOrder={handleTrackOrder} lookupProductFromRedux={lookupProductFromRedux} />
-          )}
-          contentContainerStyle={styles.listContainer}
+          keyExtractor={(item) => String(item.orderid || item.orderId || item._id || Math.random().toString())}
+          renderItem={({ item }) => <OrderItem order={item} onTrackOrder={handleTrackOrder} lookupProductFromRedux={lookupProductFromRedux} />}
+          contentContainerStyle={[styles.listContainer, { paddingBottom: NAV_HEIGHT + Math.max(insets.bottom, 12) }]}
           showsVerticalScrollIndicator={true}
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
@@ -370,31 +390,12 @@ const Package = () => {
         />
       )}
 
-      <OrderDetailModal
-        visible={modalVisible}
-        order={selectedOrder}
-        onClose={closeModal}
-        lookupProductFromRedux={lookupProductFromRedux}
-      />
+      <OrderDetailModal visible={modalVisible} order={selectedOrder} onClose={closeModal} lookupProductFromRedux={lookupProductFromRedux} />
 
-      {/* Fixed Bottom Navigation */}
-      <View style={styles.bottomNavigation}>
-        <TouchableOpacity style={styles.navItem} onPress={() => router.push('./')}>
-          <Icon name="home" size={24} color="#000" />
-          <Text>Home</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={[styles.navItem, styles.activeNavItem]}>
-          <Icon name="ticket" size={24} color="#000" />
-          <Text>My Orders</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.navItem} onPress={() => router.push('./Profile')}>
-          <Icon name="user" size={24} color="#000" />
-          <Text>Profile</Text>
-        </TouchableOpacity>
-      </View>
+      <BottomNav activeRoute="Package" cartCount={cartCount} />
     </View>
-  );
-};
+  )
+}
 
 const trackerStyles = StyleSheet.create({
   container: { paddingVertical: 18, width: '100%' },
@@ -410,11 +411,11 @@ const trackerStyles = StyleSheet.create({
   label: { fontSize: 12, textAlign: 'center' },
   activeLabel: { color: THEME_COLORS.text.primary, fontWeight: 'bold' },
   inactiveLabel: { color: THEME_COLORS.text.secondary },
-});
+})
 
 const styles = StyleSheet.create({
-  container: { 
-    flex: 1, 
+  container: {
+    flex: 1,
     backgroundColor: THEME_COLORS.secondary,
   },
   headerContainer: {
@@ -423,39 +424,38 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     backgroundColor: THEME_COLORS.secondary,
   },
-  title: { 
-    fontSize: 20, 
-    fontWeight: 'bold', 
-    textAlign: 'center', 
-    marginVertical: 16, 
+  title: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    marginVertical: 16,
     marginTop: 20,
   },
-  backButton: { 
-    position: 'absolute', 
-    top: 20, 
-    left: 16, 
-    zIndex: 1 
+  backButton: {
+    position: 'absolute',
+    top: 20,
+    left: 16,
+    zIndex: 1,
   },
-  listContainer: { 
-    paddingBottom: 80,
+  listContainer: {
     paddingHorizontal: 16,
   },
-  orderCard: { 
-    backgroundColor: '#fff', 
-    borderRadius: 8, 
-    padding: 15, 
-    marginBottom: 15, 
-    elevation: 2, 
-    shadowColor: '#000', 
-    shadowOffset: { width: 0, height: 1 }, 
-    shadowOpacity: 0.22, 
-    shadowRadius: 2.22 
+  orderCard: {
+    backgroundColor: '#fff',
+    borderRadius: 8,
+    padding: 15,
+    marginBottom: 15,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.22,
+    shadowRadius: 2.22,
   },
-  orderCardHeader: { 
-    flexDirection: 'row', 
-    justifyContent: 'space-between', 
-    alignItems: 'center', 
-    marginBottom: 10 
+  orderCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
   },
   orderNumber: { fontSize: 16, fontWeight: 'bold' },
   statusBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 12 },
@@ -463,85 +463,85 @@ const styles = StyleSheet.create({
   orderCardBody: { marginBottom: 10 },
   orderItemsText: { color: THEME_COLORS.text.secondary, marginBottom: 5 },
   totalText: { fontSize: 16, fontWeight: 'bold' },
-  orderCardFooter: { 
-    flexDirection: 'row', 
-    justifyContent: 'flex-end', 
-    borderTopWidth: 1, 
-    borderTopColor: THEME_COLORS.border, 
-    paddingTop: 10 
+  orderCardFooter: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    borderTopWidth: 1,
+    borderTopColor: THEME_COLORS.border,
+    paddingTop: 10,
   },
-  trackButton: { 
-    backgroundColor: THEME_COLORS.primary, 
-    paddingHorizontal: 15, 
-    paddingVertical: 8, 
-    borderRadius: 4, 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    marginRight: 10 
+  trackButton: {
+    backgroundColor: THEME_COLORS.primary,
+    paddingHorizontal: 15,
+    paddingVertical: 8,
+    borderRadius: 4,
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginRight: 10,
   },
   buttonIcon: { marginRight: 5 },
   trackButtonText: { color: '#fff', fontWeight: 'bold' },
   viewDetailsButton: { paddingHorizontal: 15, paddingVertical: 8 },
   viewDetailsText: { color: THEME_COLORS.primary, fontWeight: 'bold' },
-  emptyContainer: { 
-    alignItems: 'center', 
-    justifyContent: 'center', 
-    paddingVertical: 60 
+  emptyContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 60,
   },
-  emptyText: { 
-    marginTop: 10, 
-    fontSize: 16, 
-    color: THEME_COLORS.text.secondary 
+  emptyText: {
+    marginTop: 10,
+    fontSize: 16,
+    color: THEME_COLORS.text.secondary,
   },
 
-  modalOverlay: { 
-    flex: 1, 
-    backgroundColor: 'rgba(0, 0, 0, 0.5)', 
-    justifyContent: 'center', 
-    alignItems: 'center' 
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  modalContent: { 
-    backgroundColor: '#fff', 
-    borderRadius: 8, 
-    width: '92%', 
-    maxHeight: '86%', 
-    padding: 16 
+  modalContent: {
+    backgroundColor: '#fff',
+    borderRadius: 8,
+    width: '92%',
+    maxHeight: '86%',
+    padding: 16,
   },
   closeButton: { alignSelf: 'flex-end' },
-  modalTitle: { 
-    fontSize: 16, 
-    fontWeight: '700', 
-    marginBottom: 12, 
-    textAlign: 'center' 
+  modalTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    marginBottom: 12,
+    textAlign: 'center',
   },
-  modalRow: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    marginBottom: 12, 
-    paddingVertical: 6, 
-    borderBottomWidth: 1, 
-    borderBottomColor: '#f2f2f2' 
+  modalRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+    paddingVertical: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f2f2f2',
   },
-  modalColImage: { 
-    width: 80, 
-    height: 80, 
-    marginRight: 12, 
-    justifyContent: 'center', 
-    alignItems: 'center' 
+  modalColImage: {
+    width: 80,
+    height: 80,
+    marginRight: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  productThumb: { 
-    width: 80, 
-    height: 80, 
-    borderRadius: 6, 
-    backgroundColor: '#eee' 
+  productThumb: {
+    width: 80,
+    height: 80,
+    borderRadius: 6,
+    backgroundColor: '#eee',
   },
-  noImageBox: { 
-    width: 80, 
-    height: 80, 
-    borderRadius: 6, 
-    backgroundColor: '#eee', 
-    justifyContent: 'center', 
-    alignItems: 'center' 
+  noImageBox: {
+    width: 80,
+    height: 80,
+    borderRadius: 6,
+    backgroundColor: '#eee',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   modalColDetails: { flex: 1, paddingRight: 8 },
   modalColQty: { width: 110, alignItems: 'flex-end' },
@@ -550,56 +550,56 @@ const styles = StyleSheet.create({
   itemSmall: { color: '#999', fontSize: 12, marginTop: 4 },
   itemSubtotal: { fontWeight: '700', marginTop: 8 },
   hr: { height: 1, backgroundColor: '#eee', marginVertical: 12 },
-  totalRow: { 
-    flexDirection: 'row', 
-    justifyContent: 'space-between', 
-    paddingVertical: 6 
+  totalRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 6,
   },
-  metaRow: { 
-    flexDirection: 'row', 
-    justifyContent: 'space-between', 
-    marginTop: 6 
+  metaRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 6,
   },
   metaLabel: { color: THEME_COLORS.text.secondary },
   metaValue: { fontWeight: '600' },
-  modalCloseBtn: { 
-    backgroundColor: THEME_COLORS.primary, 
-    paddingHorizontal: 18, 
-    paddingVertical: 10, 
-    borderRadius: 6 
+  modalCloseBtn: {
+    backgroundColor: THEME_COLORS.primary,
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: 6,
   },
 
-  backdropContainer: { 
-    ...StyleSheet.absoluteFillObject, 
-    backgroundColor: 'rgba(255,255,255,0.8)', 
-    justifyContent: 'center', 
-    alignItems: 'center', 
-    zIndex: 999 
+  backdropContainer: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(255,255,255,0.8)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 999,
   },
-  loaderBox: { 
-    backgroundColor: '#fff', 
-    padding: 20, 
-    borderRadius: 8, 
-    alignItems: 'center', 
-    elevation: 5, 
-    shadowColor: '#000', 
-    shadowOffset: { width: 0, height: 2 }, 
-    shadowOpacity: 0.25, 
-    shadowRadius: 3.84 
+  loaderBox: {
+    backgroundColor: '#fff',
+    padding: 20,
+    borderRadius: 8,
+    alignItems: 'center',
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
   },
   loadingText: { marginTop: 10, color: '#333' },
 
-  bottomNavigation: { 
-    position: 'absolute', 
-    bottom: 0, 
-    left: 0, 
-    right: 0, 
-    flexDirection: 'row', 
-    justifyContent: 'space-around', 
-    alignItems: 'center', 
-    height: 60, 
-    borderTopWidth: 1, 
-    borderTopColor: '#ccc', 
+  bottomNavigation: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    alignItems: 'center',
+    height: 60,
+    borderTopWidth: 1,
+    borderTopColor: '#ccc',
     backgroundColor: THEME_COLORS.secondary,
     elevation: 8,
     shadowColor: '#000',
@@ -607,15 +607,15 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 4,
   },
-  navItem: { 
-    alignItems: 'center', 
-    flex: 1, 
-    paddingVertical: 8 
+  navItem: {
+    alignItems: 'center',
+    flex: 1,
+    paddingVertical: 8,
   },
-  activeNavItem: { 
-    borderBottomWidth: 2, 
-    borderBottomColor: THEME_COLORS.primary 
+  activeNavItem: {
+    borderBottomWidth: 2,
+    borderBottomColor: THEME_COLORS.primary,
   },
-});
+})
 
-export default Package;
+export default Package

@@ -1,5 +1,5 @@
 // screens/ProfilePage.js
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react'
 import {
   View,
   Text,
@@ -13,134 +13,124 @@ import {
   SafeAreaView,
   useWindowDimensions,
   ScrollView,
-} from 'react-native';
-import FontAwesome from 'react-native-vector-icons/FontAwesome';
-import { useRouter, usePathname } from 'expo-router';
-import { useSelector, useDispatch } from 'react-redux';
-import axios from 'axios';
-import * as SecureStore from 'expo-secure-store';
-import { logout } from '../redux/slices/authSlice';
-import { clearCredentials, exitApp } from '../services/Auth';
-import { baseUrl } from '../constants/const';
-import { Platform } from 'react-native';
-
-/**
- * ProfilePage
- * - Order modal items now use the same structure/priority as the web implementation:
- *   prefer item.product, fallback to redux product lookup by productId,
- *   compute unitPrice, qty, subtotal and order total.
- */
+} from 'react-native'
+import FontAwesome from 'react-native-vector-icons/FontAwesome'
+import { useRouter } from 'expo-router'
+import { useSelector, useDispatch } from 'react-redux'
+import axios from 'axios'
+import * as SecureStore from 'expo-secure-store'
+import { logout } from '../redux/slices/authSlice'
+import { clearCredentials, exitApp } from '../services/Auth'
+import { baseUrl } from '../constants/const'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
+import BottomNav from '../components/BottomNav'
 
 const ProfilePage = () => {
-  const router = useRouter();
-  const pathname = usePathname();
-  const dispatch = useDispatch();
-  const { user, isAuthenticated } = useSelector((s) => s.auth || {});
-  // support both normalized and array product stores
-  const productsArray = useSelector((s) => s.products?.products || []);
-  const productsById = useSelector((s) => s.products?.productsById || {});
+  const router = useRouter()
+  const dispatch = useDispatch()
 
-  const [autoEnabled, setAutoEnabled] = useState(true);
-  const [orders, setOrders] = useState([]);
-  const [loadingOrders, setLoadingOrders] = useState(false);
-  const [selectedOrder, setSelectedOrder] = useState(null);
-  const [modalVisible, setModalVisible] = useState(false);
+  const { user, isAuthenticated } = useSelector((s) => s.auth || {})
+  const productsArray = useSelector((s) => s.products?.products || [])
+  const productsById = useSelector((s) => s.products?.productsById || {})
+  const cartState = useSelector((s) => s.cart || {})
+  const cartItemsCandidate = cartState.items ?? cartState.cartItems ?? []
+  const cartCount = Array.isArray(cartItemsCandidate)
+    ? cartItemsCandidate.reduce((sum, it) => sum + (Number(it?.quantity) || 0), 0)
+    : cartItemsCandidate && typeof cartItemsCandidate === 'object'
+    ? Object.values(cartItemsCandidate).reduce((sum, it) => sum + (Number(it?.quantity) || 0), 0)
+    : 0
 
-  const dims = useWindowDimensions();
-  const isLandscape = dims.width > dims.height;
+  const [autoEnabled, setAutoEnabled] = useState(true)
+  const [orders, setOrders] = useState([])
+  const [loadingOrders, setLoadingOrders] = useState(false)
+  const [selectedOrder, setSelectedOrder] = useState(null)
+  const [modalVisible, setModalVisible] = useState(false)
 
-  // load rememberMe flag
+  const dims = useWindowDimensions()
+  const isLandscape = dims.width > dims.height
+  const insets = useSafeAreaInsets()
+
   useEffect(() => {
-    (async () => {
+    ;(async () => {
       try {
-        const rem = await SecureStore.getItemAsync('rememberMe');
-        setAutoEnabled(rem === 'true');
+        const rem = await SecureStore.getItemAsync('rememberMe')
+        setAutoEnabled(rem === 'true')
       } catch (e) {
-        setAutoEnabled(false);
+        setAutoEnabled(false)
       }
-    })();
-  }, []);
+    })()
+  }, [])
 
-  // orders fetch
   useEffect(() => {
     const fetchOrders = async () => {
-      setLoadingOrders(true);
+      setLoadingOrders(true)
       try {
-        const { data } = await axios.get(`${baseUrl}/orders`);
+        const { data } = await axios.get(`${baseUrl}/orders`)
         if (!Array.isArray(data)) {
-          setOrders([]);
-          return;
+          setOrders([])
+          return
         }
-        // match user by id or phone (robust)
-        const matchKey = String(user?.id ?? user?.phone ?? user?.phoneNumber ?? '');
-        const filtered = data.filter((o) =>
-          String(o.userId || o.user || '').trim() === matchKey.trim()
-        );
-        setOrders(filtered);
+        const matchKey = String(user?.id ?? user?.phone ?? user?.phoneNumber ?? '')
+        const filtered = data.filter((o) => String(o.userId || o.user || '').trim() === matchKey.trim())
+        setOrders(filtered)
       } catch (e) {
-        console.error('Fetch orders error', e);
-        setOrders([]);
+        console.error('Fetch orders error', e)
+        setOrders([])
       } finally {
-        setLoadingOrders(false);
+        setLoadingOrders(false)
       }
-    };
-
-    if (isAuthenticated) fetchOrders();
-  }, [user, isAuthenticated]);
-
-  // toggle auto-login
-  const onToggleAuto = async (value) => {
-    setAutoEnabled(value);
-    if (!value) {
-      await clearCredentials();
-      await SecureStore.setItemAsync('rememberMe', 'false');
-    } else {
-      await SecureStore.setItemAsync('rememberMe', 'true');
     }
-  };
+
+    if (isAuthenticated) fetchOrders()
+  }, [user, isAuthenticated])
+
+  const onToggleAuto = async (value) => {
+    setAutoEnabled(value)
+    if (!value) {
+      await clearCredentials()
+      await SecureStore.setItemAsync('rememberMe', 'false')
+    } else {
+      await SecureStore.setItemAsync('rememberMe', 'true')
+    }
+  }
 
   const onLogout = async () => {
-    await clearCredentials();
-    dispatch(logout());
-    exitApp();
-  };
+    await clearCredentials()
+    dispatch(logout())
+    exitApp()
+  }
 
-  // redux lookup helper (memoized)
   const lookupProductFromRedux = useMemo(() => {
     return (productId) => {
-      if (!productId) return null;
-      // direct normalized lookup
-      if (productsById && productsById[productId]) return productsById[productId];
-      // tolerant search in normalized values
+      if (!productId) return null
+      if (productsById && productsById[productId]) return productsById[productId]
       const found = Object.values(productsById || {}).find(
         (p) =>
           String(p?.id) === String(productId) ||
           String(p?._id) === String(productId) ||
           String(p?.productId) === String(productId)
-      );
-      if (found) return found;
-      // fallback to array
-      return (productsArray || []).find(
-        (p) =>
-          String(p?.id) === String(productId) ||
-          String(p?._id) === String(productId) ||
-          String(p?.productId) === String(productId)
-      ) || null;
-    };
-  }, [productsById, productsArray]);
+      )
+      if (found) return found
+      return (
+        (productsArray || []).find(
+          (p) =>
+            String(p?.id) === String(productId) ||
+            String(p?._id) === String(productId) ||
+            String(p?.productId) === String(productId)
+        ) || null
+      )
+    }
+  }, [productsById, productsArray])
 
-  // Header for FlatList (keeps profile + controls)
   const renderHeader = () => (
     <View style={styles.headerContainer}>
       <Text style={styles.header}>Personal Details</Text>
       {isAuthenticated ? (
         <>
-          {['firstName','lastName','email','phone'].map((field) => (
+          {['firstName', 'lastName', 'email', 'phone'].map((field) => (
             <View key={field} style={styles.row}>
               <Text style={styles.label}>
-                {field === 'phone' ? 'Phone:' :
-                 field === 'email' ? 'Email:' :
-                 `${field.replace(/Name/, ' Name')}:`}
+                {field === 'phone' ? 'Phone:' : field === 'email' ? 'Email:' : `${field.replace(/Name/, ' Name')}:`}
               </Text>
               <View style={styles.valueRow}>
                 <Text style={styles.valueText}>{user?.[field] ?? 'N/A'}</Text>
@@ -166,128 +156,86 @@ const ProfilePage = () => {
           <ActivityIndicator size="large" color="#4B2C20" />
         </View>
       )}
-      {!loadingOrders && orders.length === 0 && (
-        <Text style={styles.centerText}>You have no past orders.</Text>
-      )}
+      {!loadingOrders && orders.length === 0 && <Text style={styles.centerText}>You have no past orders.</Text>}
     </View>
-  );
+  )
 
-  // order row open
   const openOrder = (order) => {
-    setSelectedOrder(order);
-    setModalVisible(true);
-  };
+    setSelectedOrder(order)
+    setModalVisible(true)
+  }
 
   const closeOrderModal = () => {
-    setModalVisible(false);
-    setSelectedOrder(null);
-  };
+    setModalVisible(false)
+    setSelectedOrder(null)
+  }
 
-  // each order row renderer
-  const renderOrderItem = ({ item }) => {
-    return (
-      <TouchableOpacity style={styles.orderCard} onPress={() => openOrder(item)}>
-        <View style={styles.orderCardHeader}>
-          <Text style={styles.orderId}>Order #{String(item?.orderid || item?.orderId || '').toUpperCase()}</Text>
-          <Text style={styles.orderDate}>
-            {item?.date ? new Date(item.date).toLocaleDateString() : ''}
-          </Text>
-        </View>
-        <View style={styles.orderCardBody}>
-          <Text>
-            Status:{' '}
-            <Text style={styles.orderStatus}>{item.status || 'N/A'}</Text>
-          </Text>
-          <FontAwesome
-            name={
-              item.status === 'fulfilled'
-                ? 'check-circle'
-                : item.status === 'in transit'
-                ? 'truck'
-                : 'hourglass'
-            }
-            size={20}
-            color="#4B2C20"
-          />
-        </View>
-      </TouchableOpacity>
-    );
-  };
-
-  /**
-   * Web-parity helpers for order items & price math
-   * - getOrderItems supports multiple server variants
-   * - computeUnitPrice follows priority:
-   *    productFromOrder?.price || productFromOrder?.unitPrice || productFromRedux?.price || item.price || 0
-   */
+  const renderOrderItem = ({ item }) => (
+    <TouchableOpacity style={styles.orderCard} onPress={() => openOrder(item)}>
+      <View style={styles.orderCardHeader}>
+        <Text style={styles.orderId}>Order #{String(item?.orderid || item?.orderId || '').toUpperCase()}</Text>
+        <Text style={styles.orderDate}>{item?.date ? new Date(item.date).toLocaleDateString() : ''}</Text>
+      </View>
+      <View style={styles.orderCardBody}>
+        <Text>
+          Status: <Text style={styles.orderStatus}>{item.status || 'N/A'}</Text>
+        </Text>
+        <FontAwesome
+          name={item.status === 'fulfilled' ? 'check-circle' : item.status === 'in transit' ? 'truck' : 'hourglass'}
+          size={20}
+          color="#4B2C20"
+        />
+      </View>
+    </TouchableOpacity>
+  )
 
   const getOrderItems = (order) => {
-    if (!order) return [];
-    // include the variants your backend may use
-    return (
-      order.orderitem ||
-      order.orderItems ||
-      order.order_item ||
-      order.items ||
-      order.itemsOrdered ||
-      []
-    );
-  };
+    if (!order) return []
+    return order.orderitem || order.orderItems || order.order_item || order.items || order.itemsOrdered || []
+  }
 
   const computeUnitPrice = (item) => {
-    const productFromOrder = item.product || null;
-    const productFromRedux = lookupProductFromRedux(item.productId);
-    const unitPrice = Number(
-      productFromOrder?.price ??
-      productFromOrder?.unitPrice ??
-      productFromRedux?.price ??
-      item.price ??
-      0
-    ) || 0;
-    return unitPrice;
-  };
+    const productFromOrder = item.product || null
+    const productFromRedux = lookupProductFromRedux(item.productId)
+    const unitPrice =
+      Number(
+        productFromOrder?.price ??
+          productFromOrder?.unitPrice ??
+          productFromRedux?.price ??
+          item.price ??
+          0
+      ) || 0
+    return unitPrice
+  }
 
   const computeItemSubtotal = (item) => {
-    const unitPrice = computeUnitPrice(item);
-    const qty = Number(item.quantity || 0);
-    return unitPrice * qty;
-  };
+    const unitPrice = computeUnitPrice(item)
+    const qty = Number(item.quantity || 0)
+    return unitPrice * qty
+  }
 
   const computeOrderTotal = (order) => {
-    const items = getOrderItems(order);
-    return items.reduce((acc, it) => acc + computeItemSubtotal(it), 0);
-  };
+    const items = getOrderItems(order)
+    return items.reduce((acc, it) => acc + computeItemSubtotal(it), 0)
+  }
 
-  // dynamic modal sizing
-  const modalWidth = isLandscape ? Math.min(900, dims.width * 0.9) : Math.min(600, dims.width * 0.92);
-  const modalMaxHeight = isLandscape ? dims.height * 0.9 : dims.height * 0.8;
+  const modalWidth = isLandscape ? Math.min(900, dims.width * 0.9) : Math.min(600, dims.width * 0.92)
+  const modalMaxHeight = isLandscape ? dims.height * 0.9 : dims.height * 0.8
 
   return (
-    <SafeAreaView style={styles.safe}>
+    <SafeAreaView style={[styles.safe, { paddingBottom: Math.max(insets.bottom, 12) }]}>
       <FlatList
         data={orders}
-        keyExtractor={(item) => String(item?.orderid || item?.orderId || Math.random())}
+        keyExtractor={(item) => String(item?.orderid || item?.orderId || item?._id || Math.random())}
         renderItem={renderOrderItem}
-        contentContainerStyle={styles.listContainer}
+        contentContainerStyle={[styles.listContainer, { paddingBottom: 120 }]}
         ListHeaderComponent={renderHeader}
         removeClippedSubviews={true}
       />
 
-      {/* Order Details Modal (web-parity) */}
-      <Modal
-        visible={modalVisible}
-        transparent
-        animationType="slide"
-        supportedOrientations={['portrait', 'landscape']}
-        onRequestClose={closeOrderModal}
-      >
+      <Modal visible={modalVisible} transparent animationType="slide" supportedOrientations={['portrait', 'landscape']} onRequestClose={closeOrderModal}>
         <View style={[styles.modalOverlay, { zIndex: 9999, elevation: 20 }]}>
-          <View
-            style={[
-              styles.modalBox,
-              { width: modalWidth, maxHeight: modalMaxHeight, elevation: 30, zIndex: 10000 },
-            ]}
-          >
+          <View style={[styles.modalBox, { width: modalWidth, maxHeight: modalMaxHeight, elevation: 30, zIndex: 10000 }]}>
             <Text style={styles.modalTitle}>
               Order Details — #{String(selectedOrder?.orderid || selectedOrder?.orderId || '').toUpperCase()}
             </Text>
@@ -302,33 +250,31 @@ const ProfilePage = () => {
                   <View style={styles.metaRow}>
                     <Text style={styles.metaLabel}>Placed:</Text>
                     <Text style={styles.metaValue}>
-                      {selectedOrder.createdAt ? new Date(selectedOrder.createdAt).toLocaleString() : (selectedOrder.date ? new Date(selectedOrder.date).toLocaleString() : '—')}
+                      {selectedOrder.createdAt
+                        ? new Date(selectedOrder.createdAt).toLocaleString()
+                        : selectedOrder.date
+                        ? new Date(selectedOrder.date).toLocaleString()
+                        : '—'}
                     </Text>
                   </View>
 
                   <View style={{ height: 12 }} />
 
-                  {/* Items: web-parity rendering */}
                   {getOrderItems(selectedOrder).length > 0 ? (
                     getOrderItems(selectedOrder).map((item, i) => {
-                      const productFromOrder = item.product || null;
-                      const productFromRedux = lookupProductFromRedux(item.productId);
-                      const name = productFromOrder?.name || productFromRedux?.name || productFromOrder?.title || `Product ${item.productId || i + 1}`;
-                      const unitPrice = computeUnitPrice(item);
-                      const qty = Number(item.quantity || 0);
-                      const subtotal = unitPrice * qty;
-                      const imageUri = productFromRedux?.productImage || productFromOrder?.imageUrl || productFromOrder?.productImage || null;
+                      const productFromOrder = item.product || null
+                      const productFromRedux = lookupProductFromRedux(item.productId)
+                      const name =
+                        productFromOrder?.name || productFromRedux?.name || productFromOrder?.title || `Product ${item.productId || i + 1}`
+                      const unitPrice = computeUnitPrice(item)
+                      const qty = Number(item.quantity || 0)
+                      const subtotal = unitPrice * qty
+                      const imageUri = productFromRedux?.productImage || productFromOrder?.imageUrl || productFromOrder?.productImage || null
 
                       return (
                         <View key={String(i)} style={styles.itemRowModal}>
                           <View style={styles.itemImageWrapper}>
-                            {imageUri ? (
-                              <Image source={{ uri: imageUri }} style={styles.itemImageModal} />
-                            ) : (
-                              <View style={styles.placeholderImageModal}>
-                                <Text style={{ color: '#666', fontSize: 12 }}>No image</Text>
-                              </View>
-                            )}
+                            {imageUri ? <Image source={{ uri: imageUri }} style={styles.itemImageModal} /> : <View style={styles.placeholderImageModal}><Text style={{ color: '#666', fontSize: 12 }}>No image</Text></View>}
                           </View>
 
                           <View style={styles.itemMetaWrapper}>
@@ -342,7 +288,7 @@ const ProfilePage = () => {
                             <Text style={styles.itemSubtotal}>Subtotal: KSH {subtotal.toFixed(2)}</Text>
                           </View>
                         </View>
-                      );
+                      )
                     })
                   ) : (
                     <Text style={styles.centerText}>No items in this order.</Text>
@@ -369,24 +315,10 @@ const ProfilePage = () => {
         </View>
       </Modal>
 
-      {/* Bottom nav */}
-      <View style={styles.navbar}>
-        <TouchableOpacity style={styles.navItem} onPress={() => router.replace('./Home')}>
-          <FontAwesome name="home" size={24} />
-          <Text>Home</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.navItem} onPress={() => router.replace('./Package')}>
-          <FontAwesome name="ticket" size={24} />
-          <Text>My Orders</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.navItem} onPress={() => router.replace('./Profile')}>
-          <FontAwesome name="user" size={24} color="blue" />
-          <Text>Profile</Text>
-        </TouchableOpacity>
-      </View>
+      <BottomNav activeRoute="Profile" cartCount={cartCount} />
     </SafeAreaView>
-  );
-};
+  )
+}
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#FFF8E1' },
@@ -408,13 +340,11 @@ const styles = StyleSheet.create({
   orderStatus: { fontWeight: '600', textTransform: 'capitalize' },
   centerText: { textAlign: 'center', marginVertical: 12, color: '#555' },
 
-  /* Modal */
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.44)', justifyContent: 'center', alignItems: 'center', padding: 12 },
   modalBox: { backgroundColor: '#fff', borderRadius: 10, padding: 12 },
   modalTitle: { fontSize: 18, fontWeight: '700', marginBottom: 8, textAlign: 'center' },
   modalContent: { paddingBottom: 8 },
 
-  /* modal item rows (web-like layout) */
   itemRowModal: { flexDirection: 'row', alignItems: 'center', marginBottom: 12, paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: '#f2f2f2' },
   itemImageWrapper: { width: 80, height: 80, marginRight: 12, justifyContent: 'center', alignItems: 'center' },
   itemImageModal: { width: 80, height: 80, borderRadius: 6, backgroundColor: '#eee' },
@@ -436,10 +366,6 @@ const styles = StyleSheet.create({
   modalFooter: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: 8 },
   closeBtn: { backgroundColor: '#4B2C20', padding: 10, borderRadius: 6, alignItems: 'center' },
   closeText: { color: '#fff', fontWeight: '600' },
+})
 
-  /* Bottom nav */
-  navbar: { position: 'absolute', bottom: 0, left: 0, right: 0, flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center', height: 50, borderTopWidth: 1, borderTopColor: '#ccc', backgroundColor: '#FFF8E1' },
-  navItem: { alignItems: 'center' },
-});
-
-export default ProfilePage;
+export default ProfilePage

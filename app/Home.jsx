@@ -20,8 +20,13 @@ import FontAwesome from 'react-native-vector-icons/FontAwesome'
 import { fetchProductsAndRelated, fetchProducts, fetchProductImage } from '../redux/slices/productsSlice'
 import * as FileSystem from 'expo-file-system/legacy'
 import * as Crypto from 'expo-crypto'
+import BottomNav from '../components/BottomNav'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
 
 const PLACEHOLDER = 'https://via.placeholder.com/150x150/f0f0f0/999999?text=No+Image'
+const NAV_HEIGHT = 64
+const H_GUTTER = 15
+const EMPTY_ARR = Object.freeze([])
 
 if (!global.__arpella_image_helpers__) {
   global.__arpella_image_helpers__ = {}
@@ -53,7 +58,7 @@ if (!global.__arpella_image_helpers__) {
       if (res && (res.status === 200 || typeof res.status === 'undefined')) return path
       await FileSystem.deleteAsync(path).catch(() => {})
       return null
-    } catch {
+    } catch (e) {
       return null
     }
   }
@@ -73,6 +78,10 @@ const ProductImage = memo(
       mountedRef.current = true
       return () => {
         mountedRef.current = false
+        if (noImageTimer.current) {
+          clearTimeout(noImageTimer.current)
+          noImageTimer.current = null
+        }
       }
     }, [])
 
@@ -86,13 +95,8 @@ const ProductImage = memo(
       prefetched.current = new Set()
     }, [productId])
 
-    const { storeProduct, isImageLoading } = useSelector(
-      (state) => ({
-        storeProduct: productId ? state.products?.productsById?.[productId] : undefined,
-        isImageLoading: productId ? state.products?.imageLoadingStates?.[productId] || false : false,
-      }),
-      shallowEqual
-    )
+    const storeProduct = useSelector((state) => (productId ? state.products?.productsById?.[productId] : undefined))
+    const isImageLoading = useSelector((state) => (productId ? state.products?.imageLoadingStates?.[productId] || false : false))
 
     const uri = useMemo(
       () =>
@@ -104,10 +108,12 @@ const ProductImage = memo(
       [storeProduct?.imageUrl, product?.imageUrl, product?.image, product?.productimages]
     )
 
-    const [showSpinner, setShowSpinner] = useState(false)
-    const [showNoImage, setShowNoImage] = useState(false)
-    const [loadError, setLoadError] = useState(false)
-    const [cachedUri, setCachedUri] = useState(null)
+    const [imageState, setImageState] = useState({
+      showSpinner: false,
+      showNoImage: false,
+      loadError: false,
+      cachedUri: null,
+    })
 
     useEffect(() => {
       if (!productId) return
@@ -120,33 +126,27 @@ const ProductImage = memo(
     }, [productId, storeProduct, isImageLoading, dispatch])
 
     useEffect(() => {
-      if (isImageLoading) {
-        if (!showSpinner) setShowSpinner(true)
-        if (showNoImage) setShowNoImage(false)
-        if (noImageTimer.current) {
-          clearTimeout(noImageTimer.current)
-          noImageTimer.current = null
-        }
-        return
+      if (noImageTimer.current) {
+        clearTimeout(noImageTimer.current)
+        noImageTimer.current = null
       }
 
-      if (showSpinner) setShowSpinner(false)
+      if (isImageLoading) {
+        setImageState((prev) => ({ ...prev, showSpinner: true, showNoImage: false }))
+        return
+      }
 
       if (uri) {
-        if (showNoImage) setShowNoImage(false)
-        if (noImageTimer.current) {
-          clearTimeout(noImageTimer.current)
-          noImageTimer.current = null
-        }
+        setImageState((prev) => ({ ...prev, showSpinner: false, showNoImage: false }))
         return
       }
 
-      if (!noImageTimer.current) {
-        noImageTimer.current = setTimeout(() => {
-          if (mountedRef.current) setShowNoImage(true)
-          noImageTimer.current = null
-        }, 700)
-      }
+      noImageTimer.current = setTimeout(() => {
+        if (mountedRef.current) {
+          setImageState((prev) => ({ ...prev, showSpinner: false, showNoImage: true }))
+        }
+        noImageTimer.current = null
+      }, 700)
 
       return () => {
         if (noImageTimer.current) {
@@ -154,7 +154,7 @@ const ProductImage = memo(
           noImageTimer.current = null
         }
       }
-    }, [isImageLoading, uri, showSpinner, showNoImage])
+    }, [isImageLoading, uri])
 
     useEffect(() => {
       let canceled = false
@@ -165,7 +165,9 @@ const ProductImage = memo(
             const { path } = await getCachedFilePath(u)
             const info = await FileSystem.getInfoAsync(path)
             if (info.exists) {
-              if (!canceled) setCachedUri(path)
+              if (!canceled) {
+                setImageState((prev) => ({ ...prev, cachedUri: path }))
+              }
               return
             }
           }
@@ -173,13 +175,15 @@ const ProductImage = memo(
           if (!canceled) {
             if (local) {
               prefetched.current.add(u)
-              setCachedUri(local)
+              setImageState((prev) => ({ ...prev, cachedUri: local }))
             } else {
-              setCachedUri(null)
+              setImageState((prev) => ({ ...prev, cachedUri: null }))
             }
           }
-        } catch {
-          if (!canceled) setCachedUri(null)
+        } catch (e) {
+          if (!canceled) {
+            setImageState((prev) => ({ ...prev, cachedUri: null }))
+          }
         }
       }
       doCache(uri)
@@ -189,11 +193,10 @@ const ProductImage = memo(
     }, [uri])
 
     const onError = useCallback(() => {
-      setLoadError(true)
-      setShowSpinner(false)
+      setImageState((prev) => ({ ...prev, loadError: true, showSpinner: false }))
     }, [])
 
-    if (showSpinner) {
+    if (imageState.showSpinner) {
       return (
         <View style={[{ justifyContent: 'center', alignItems: 'center', backgroundColor: '#f8f8f8' }, style]}>
           <ActivityIndicator size="small" color="#5a2428" />
@@ -202,13 +205,13 @@ const ProductImage = memo(
     }
 
     const displayUri =
-      (cachedUri && (cachedUri.startsWith('file://') ? cachedUri : `file://${cachedUri}`)) || uri
+      (imageState.cachedUri && (imageState.cachedUri.startsWith('file://') ? imageState.cachedUri : `file://${imageState.cachedUri}`)) || uri
 
-    if (displayUri && !loadError) {
+    if (displayUri && !imageState.loadError) {
       return <Image source={{ uri: displayUri }} style={[{ width: '100%', height: '100%' }, style]} resizeMode={resizeMode} onError={onError} />
     }
 
-    if (loadError || showNoImage) {
+    if (imageState.loadError || imageState.showNoImage) {
       return (
         <View style={[{ justifyContent: 'center', alignItems: 'center', backgroundColor: '#f8f8f8' }, style]}>
           <Image source={{ uri: PLACEHOLDER }} style={{ width: style?.width || 100, height: style?.height || 100, resizeMode: 'cover' }} />
@@ -231,23 +234,30 @@ ProductImage.displayName = 'ProductImage'
 const Home = () => {
   const dispatch = useDispatch()
   const router = useRouter()
+  const insets = useSafeAreaInsets()
 
-  const { products: rawProducts, categories: rawCategories, subcategories: rawSubcategories, loading, error, hasMore } =
-    useSelector(
-      (s) => ({
-        products: s.products?.products || [],
-        categories: s.products?.categories || [],
-        subcategories: s.products?.subcategories || [],
-        loading: s.products?.loading || false,
-        error: s.products?.error || null,
-        hasMore: s.products?.hasMore || false,
-      }),
-      shallowEqual
-    )
+  const productsSlice = useSelector(
+    (s) => ({
+      products: s.products?.products ?? EMPTY_ARR,
+      categories: s.products?.categories ?? EMPTY_ARR,
+      subcategories: s.products?.subcategories ?? EMPTY_ARR,
+      loading: Boolean(s.products?.loading),
+      error: s.products?.error ?? null,
+      hasMore: Boolean(s.products?.hasMore),
+    }),
+    shallowEqual
+  )
+
+  const rawProducts = productsSlice.products
+  const rawCategories = productsSlice.categories
+  const rawSubcategories = productsSlice.subcategories
+  const loading = productsSlice.loading
+  const error = productsSlice.error
+  const hasMore = productsSlice.hasMore
 
   const cartCount = useSelector((s) => {
     const cart = s.cart || {}
-    const itemsCandidate = cart.items ?? cart.cartItems ?? []
+    const itemsCandidate = cart.items ?? cart.cartItems ?? EMPTY_ARR
     if (Array.isArray(itemsCandidate)) {
       return itemsCandidate.reduce((sum, it) => sum + (Number(it?.quantity) || 0), 0)
     }
@@ -264,7 +274,6 @@ const Home = () => {
   const [selectedCategory, setSelectedCategory] = useState('All')
   const [selectedSub, setSelectedSub] = useState(null)
   const [searchTerm, setSearchTerm] = useState('')
-  const [filtered, setFiltered] = useState([])
 
   const [modalVisible, setModalVisible] = useState(false)
   const [selectedProduct, setSelectedProduct] = useState(null)
@@ -331,21 +340,21 @@ const Home = () => {
 
   useEffect(() => {
     if (!initialLoadComplete && !loading) {
-      const hasCategories = Array.isArray(rawCategories) && rawCategories.length > 0
-      const hasProducts = Array.isArray(rawProducts) && rawProducts.length > 0
-      if ((hasCategories && hasProducts) || error) {
+      const hasCats = Array.isArray(rawCategories) && rawCategories.length > 0
+      const hasProds = Array.isArray(rawProducts) && rawProducts.length > 0
+      if ((hasCats && hasProds) || error) {
         setInitialLoadComplete(true)
       }
     }
   }, [loading, rawCategories, rawProducts, error, initialLoadComplete])
 
   const subsOf = useCallback((cat) => {
-    if (!cat) return []
-    return (rawSubcategories || []).filter((sc) => String(sc.categoryId) === String(cat.id))
+    if (!cat) return EMPTY_ARR
+    return (rawSubcategories || EMPTY_ARR).filter((sc) => String(sc.categoryId) === String(cat.id))
   }, [rawSubcategories])
 
-  useEffect(() => {
-    let list = Array.isArray(rawProducts) ? rawProducts.slice() : []
+  const filteredProducts = useMemo(() => {
+    let list = Array.isArray(rawProducts) ? rawProducts : []
     if (selectedCategory !== 'All') {
       const selId = selectedCategory?.id ?? selectedCategory
       list = list.filter((p) => String(p.category) === String(selId))
@@ -362,43 +371,45 @@ const Home = () => {
         return nm.includes(t) || cn.includes(t) || sn.includes(t)
       })
     }
-    setFiltered(list)
+    return list
   }, [rawProducts, selectedCategory, selectedSub, searchTerm])
 
   useEffect(() => {
+    // only run when a real category is selected
+    if (selectedCategory === 'All') return
+
     if (isFilteringRef.current) return
     if (!Array.isArray(rawProducts)) return
-    if (filtered.length > 0) return
+    if (filteredProducts.length > 0) return
     if (!hasMore) return
+    if (loading) return
 
-    let cancelled = false
-    const run = async () => {
-      isFilteringRef.current = true
-      try {
-        while (!cancelled && filtered.length === 0 && hasMore) {
-          const nextPage = currentPageRef.current + 1
-          try {
-            await dispatch(fetchProducts({ pageNumber: nextPage, pageSize: itemsPerPage })).unwrap()
-            setCurrentPage((prev) => {
-              const newVal = Math.max(prev, nextPage)
-              currentPageRef.current = newVal
-              return newVal
-            })
-            await new Promise((res) => setTimeout(res, 40))
-          } catch {
-            break
-          }
-        }
-      } finally {
-        isFilteringRef.current = false
-      }
-    }
-    run()
+    isFilteringRef.current = true
+    let mounted = true
+    const nextPage = currentPageRef.current + 1
+
+    dispatch(fetchProducts({ pageNumber: nextPage, pageSize: itemsPerPage }))
+      .unwrap()
+      .then(() => {
+        if (!mounted) return
+        setCurrentPage((prev) => {
+          const newVal = Math.max(prev, nextPage)
+          currentPageRef.current = newVal
+          return newVal
+        })
+      })
+      .catch(() => {
+        // ignore
+      })
+      .finally(() => {
+        if (mounted) isFilteringRef.current = false
+      })
+
     return () => {
-      cancelled = true
+      mounted = false
       isFilteringRef.current = false
     }
-  }, [selectedCategory, selectedSub, searchTerm, hasMore, filtered.length, rawProducts, itemsPerPage, dispatch])
+  }, [selectedCategory, filteredProducts.length, rawProducts.length, hasMore, loading, dispatch, itemsPerPage])
 
   const handleLoadMore = useCallback(async () => {
     if (!hasMore || isLoadingMore || loading) return
@@ -411,7 +422,8 @@ const Home = () => {
         currentPageRef.current = newVal
         return newVal
       })
-    } catch {
+    } catch (e) {
+      // ignore
     } finally {
       setIsLoadingMore(false)
     }
@@ -532,13 +544,13 @@ const Home = () => {
       return (
         <View style={styles.footerEnd}>
           <Text style={styles.footerEndText}>
-            {filtered.length > 0 ? `Showing ${filtered.length} of ${rawProducts.length} products` : `Loaded all ${rawProducts.length} products`}
+            {filteredProducts.length > 0 ? `Showing ${filteredProducts.length} of ${rawProducts.length} products` : `Loaded all ${rawProducts.length} products`}
           </Text>
         </View>
       )
     }
     return null
-  }, [isLoadingMore, loading, hasMore, rawProducts, filtered.length])
+  }, [isLoadingMore, loading, hasMore, rawProducts, filteredProducts.length])
 
   if (!initialLoadComplete) {
     return (
@@ -571,8 +583,8 @@ const Home = () => {
   }
 
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
+    <View style={[styles.container, { paddingBottom: Math.max(insets.bottom, 12) }]}>
+      <View style={[styles.header, { paddingHorizontal: H_GUTTER }]}>
         <Text style={styles.title}>Arpella Stores</Text>
         <TouchableOpacity onPress={() => router.push('./cart')} accessibilityRole="button" accessibilityLabel="Open cart">
           <View style={{ width: 36, height: 36, justifyContent: 'center', alignItems: 'center' }}>
@@ -586,7 +598,15 @@ const Home = () => {
         </TouchableOpacity>
       </View>
 
-      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 70, paddingHorizontal: 15 }} showsVerticalScrollIndicator={true} nestedScrollEnabled={true}>
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{
+          paddingBottom: 24 + NAV_HEIGHT + Math.max(insets.bottom, 12),
+          paddingHorizontal: 15,
+        }}
+        showsVerticalScrollIndicator={true}
+        nestedScrollEnabled={true}
+      >
         <TextInput style={styles.searchInput} placeholder="Search products…" value={searchTerm} onChangeText={setSearchTerm} returnKeyType="search" />
 
         <View style={styles.categoriesWrapper}>
@@ -640,13 +660,13 @@ const Home = () => {
           <View style={styles.activeFiltersContainer}>
             <Text style={styles.activeFiltersText}>
               Filters: {selectedCategory?.name ?? (selectedCategory === 'All' ? 'All' : '')}
-              {selectedSub ? ` > ${selectedSub.subcategoryName ?? selectedSub.name}` : ''} ({filtered.length} products)
+              {selectedSub ? ` > ${selectedSub.subcategoryName ?? selectedSub.name}` : ''} ({filteredProducts.length} products)
             </Text>
           </View>
         )}
 
         <View style={styles.products}>
-          {filtered.length === 0 && !loading ? (
+          {filteredProducts.length === 0 && !loading ? (
             <View style={styles.centered}>
               <FontAwesome name="inbox" size={48} color="#ccc" />
               <Text style={styles.emptyText}>No products found</Text>
@@ -665,7 +685,7 @@ const Home = () => {
             </View>
           ) : (
             <FlatList
-              data={filtered}
+              data={filteredProducts}
               numColumns={numColumns}
               keyExtractor={keyExtractor}
               renderItem={renderProductCard}
@@ -686,21 +706,6 @@ const Home = () => {
           )}
         </View>
       </ScrollView>
-
-      <View style={styles.navbar}>
-        <TouchableOpacity style={styles.navItem} onPress={() => router.push('./')}>
-          <FontAwesome name="home" size={24} color="blue" />
-          <Text>Home</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.navItem} onPress={() => router.push('./Package')}>
-          <FontAwesome name="ticket" size={24} />
-          <Text>My Orders</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.navItem} onPress={() => router.push('./Profile')}>
-          <FontAwesome name="user" size={24} />
-          <Text>Profile</Text>
-        </TouchableOpacity>
-      </View>
 
       {selectedProduct && (
         <Modal visible={modalVisible} animationType="slide" onRequestClose={() => setModalVisible(false)} transparent={false}>
@@ -739,6 +744,8 @@ const Home = () => {
           </ScrollView>
         </Modal>
       )}
+
+      <BottomNav cartCount={cartCount} />
     </View>
   )
 }
@@ -752,7 +759,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 15,
     paddingTop: 10,
     paddingBottom: 10,
     backgroundColor: '#FFF8E1',
