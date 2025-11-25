@@ -308,6 +308,7 @@ const Checkout = () => {
         buyerPin: buyerPin || 'N/A',
         latitude: Number(coords.latitude),
         longitude: Number(coords.longitude),
+        orderSource: "Ecommerce",
         orderItems,
       }
 
