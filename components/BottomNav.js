@@ -1,15 +1,9 @@
 // components/BottomNav.js
-import React, { memo, useCallback } from 'react'
+import React, { memo, useCallback, useMemo } from 'react'
 import { View, Text, Pressable, StyleSheet, Platform } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import FontAwesome from 'react-native-vector-icons/FontAwesome'
 import { useRouter, usePathname } from 'expo-router'
-import Animated, {
-  useAnimatedStyle,
-  useSharedValue,
-  withSpring,
-  withTiming,
-} from 'react-native-reanimated'
 import * as Haptics from 'expo-haptics'
 
 const NAV_ITEMS = [
@@ -18,78 +12,29 @@ const NAV_ITEMS = [
   { key: 'profile', label: 'Profile', route: '/Profile', icon: 'user' },
 ]
 
-const AnimatedPressable = Animated.createAnimatedComponent(Pressable)
-
 const NavButton = memo(({ item, isActive, onPress, badge }) => {
-  const scale = useSharedValue(1)
-  const iconScale = useSharedValue(1)
-
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-  }))
-
-  const iconAnimatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: iconScale.value }],
-  }))
-
-  const handlePressIn = useCallback(() => {
-    scale.value = withSpring(0.92, {
-      damping: 15,
-      stiffness: 300,
-    })
-    iconScale.value = withSpring(0.85, {
-      damping: 15,
-      stiffness: 300,
-    })
-  }, [])
-
-  const handlePressOut = useCallback(() => {
-    scale.value = withSpring(1, {
-      damping: 12,
-      stiffness: 250,
-    })
-    iconScale.value = withSpring(1, {
-      damping: 12,
-      stiffness: 250,
-    })
-  }, [])
-
   const handlePress = useCallback(() => {
-    // Trigger haptic feedback
+    // Lightweight haptic feedback
     if (Platform.OS === 'ios') {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)
-    } else {
-      Haptics.selectionAsync()
     }
-    
-    // Small bounce effect on press
-    iconScale.value = withSpring(1.15, {
-      damping: 10,
-      stiffness: 400,
-    }, () => {
-      iconScale.value = withSpring(1, {
-        damping: 12,
-        stiffness: 250,
-      })
-    })
-    
     onPress()
-  }, [onPress, iconScale])
+  }, [onPress])
 
   return (
-    <AnimatedPressable
+    <Pressable
       accessibilityRole="button"
       accessibilityLabel={`${item.label}${badge ? `, ${badge} items` : ''}`}
       onPress={handlePress}
-      onPressIn={handlePressIn}
-      onPressOut={handlePressOut}
-      style={[styles.navItem, animatedStyle]}
+      style={({ pressed }) => [
+        styles.navItem,
+        pressed && styles.navItemPressed
+      ]}
     >
-      <Animated.View 
+      <View 
         style={[
           styles.iconContainer, 
-          isActive && styles.iconContainerActive,
-          iconAnimatedStyle
+          isActive && styles.iconContainerActive
         ]}
       >
         <FontAwesome 
@@ -104,11 +49,17 @@ const NavButton = memo(({ item, isActive, onPress, badge }) => {
             </Text>
           </View>
         )}
-      </Animated.View>
+      </View>
       <Text style={[styles.navLabel, isActive && styles.navLabelActive]}>
         {item.label}
       </Text>
-    </AnimatedPressable>
+    </Pressable>
+  )
+}, (prevProps, nextProps) => {
+  // Custom comparison for better performance
+  return (
+    prevProps.isActive === nextProps.isActive &&
+    prevProps.badge === nextProps.badge
   )
 })
 
@@ -117,19 +68,36 @@ function BottomNav({ cartCount = 0 }) {
   const router = useRouter()
   const pathname = usePathname()
 
+  // Memoize navigation handler
   const navigate = useCallback((route) => {
-    // Use push instead of replace for instant navigation
-    // The router will handle the navigation stack efficiently
-    requestAnimationFrame(() => {
-      router.push(route)
-    })
+    // Use replace for same-level navigation to avoid stack buildup
+    router.replace(route)
   }, [router])
 
+  // Memoize route checking
   const isRouteActive = useCallback((route) => {
     const cleanRoute = route.replace(/^\//, '')
     const cleanPath = pathname.replace(/^\//, '')
     return cleanPath === cleanRoute || cleanPath.endsWith(cleanRoute)
   }, [pathname])
+
+  // Memoize nav items to prevent recreation
+  const navButtons = useMemo(() => {
+    return NAV_ITEMS.map((item) => {
+      const isActive = isRouteActive(item.route)
+      const badge = item.key === 'home' ? cartCount : undefined
+      
+      return (
+        <NavButton
+          key={item.key}
+          item={item}
+          isActive={isActive}
+          onPress={() => navigate(item.route)}
+          badge={badge}
+        />
+      )
+    })
+  }, [isRouteActive, cartCount, navigate])
 
   return (
     <View
@@ -140,20 +108,7 @@ function BottomNav({ cartCount = 0 }) {
         },
       ]}
     >
-      {NAV_ITEMS.map((item) => {
-        const isActive = isRouteActive(item.route)
-        const badge = item.key === 'home' ? cartCount : undefined
-        
-        return (
-          <NavButton
-            key={item.key}
-            item={item}
-            isActive={isActive}
-            onPress={() => navigate(item.route)}
-            badge={badge}
-          />
-        )
-      })}
+      {navButtons}
     </View>
   )
 }
@@ -190,6 +145,9 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     paddingHorizontal: 16,
     minWidth: 80,
+  },
+  navItemPressed: {
+    opacity: 0.7,
   },
   iconContainer: {
     width: 40,
