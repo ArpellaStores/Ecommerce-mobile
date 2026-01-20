@@ -1,4 +1,3 @@
-// app.config.js
 export default ({ config }) => ({
   expo: {
     name: "Arpella",
@@ -15,9 +14,7 @@ export default ({ config }) => ({
       backgroundColor: "#ffffff"
     },
 
-    assetBundlePatterns: [
-      "**/*"
-    ],
+    assetBundlePatterns: ["**/*"],
 
     runtimeVersion: "1.0.1",
 
@@ -25,11 +22,13 @@ export default ({ config }) => ({
       url: "https://u.expo.dev/74e626eb-21e5-44ef-b9e4-dc59288ad740",
       fallbackToCacheTimeout: 0
     },
-    jsEngine : "hermes",
+    
+    jsEngine: "hermes",  // Hermes enabled globally
+    
     android: {
-      package: "com.mgachanja.arpella",
+      package: "com.mgachanja.arpella",  // ✅ Correct package name
       versionCode: 8,
-      hermesEnabled: false,
+      // REMOVE hermesEnabled: false - let it use the global jsEngine setting
 
       adaptiveIcon: {
         foregroundImage: "./assets/images/logo.jpeg",
@@ -51,7 +50,7 @@ export default ({ config }) => ({
       supportsTablet: true,
       bundleIdentifier: "com.mgachanja.arpella",
       buildNumber: "8",
-      jsEngine: "hermes",
+      // jsEngine: "hermes" is inherited from root level
       infoPlist: {
         NSAppTransportSecurity: {
           NSAllowsArbitraryLoads: true
@@ -71,7 +70,6 @@ export default ({ config }) => ({
     },
 
     plugins: [
-      // ensure expo-updates runs first so native files are configured
       "expo-updates",
       "expo-router",
       [
