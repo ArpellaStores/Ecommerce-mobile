@@ -22,11 +22,11 @@ export default ({ config }) => ({
       url: "https://u.expo.dev/74e626eb-21e5-44ef-b9e4-dc59288ad740",
       fallbackToCacheTimeout: 0
     },
-    
+
     jsEngine: "hermes",  // Hermes enabled globally
-    
+
     android: {
-      package: "com.mgachanja.arpella",  // ✅ Correct package name
+      package: "com.mgachanja.Arpella",  // ✅ Correct package name
       versionCode: 8,
       // REMOVE hermesEnabled: false - let it use the global jsEngine setting
 
