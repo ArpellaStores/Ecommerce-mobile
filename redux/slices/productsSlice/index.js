@@ -62,17 +62,17 @@ export const fetchProducts = createAsyncThunk(
   async (arg = { pageNumber: 1, pageSize: 50 }, { getState, rejectWithValue }) => {
     try {
       const { pageNumber = 1, pageSize = 50 } = arg || {};
-      
+
       const state = getState();
       const existingPage = state.products.pages[pageNumber];
-      
+
       if (existingPage && Date.now() - existingPage.ts < 60000) {
-        return { 
-          items: existingPage.ids.map(id => state.products.productsById[id]).filter(Boolean), 
-          pageNumber, 
-          pageSize, 
+        return {
+          items: existingPage.ids.map(id => state.products.productsById[id]).filter(Boolean),
+          pageNumber,
+          pageSize,
           hasMore: state.products.hasMore,
-          cached: true 
+          cached: true
         };
       }
 
@@ -80,11 +80,11 @@ export const fetchProducts = createAsyncThunk(
       const { data } = await axios.get(url);
       const arr = Array.isArray(data) ? data : (data.items || []);
       const normalized = arr.map(normalizeProduct);
-      
-      return { 
-        items: normalized, 
-        pageNumber, 
-        pageSize, 
+
+      return {
+        items: normalized,
+        pageNumber,
+        pageSize,
         hasMore: arr.length === pageSize,
         cached: false
       };
@@ -102,14 +102,11 @@ export const fetchProductImage = createAsyncThunk(
     }
 
     const state = getState();
-    const product = state.products.productsById[productId];
+    // Check our new decoupled state first
+    const existingImage = state.products.productImages[productId];
 
-    if (!product) {
-      return rejectWithValue('Product not found');
-    }
-
-    if (product.imageUrl) {
-      return { productId, imageUrl: product.imageUrl, cached: true };
+    if (existingImage && existingImage.imageUrl) {
+      return { productId, imageUrl: existingImage.imageUrl, cached: true };
     }
 
     try {
@@ -159,9 +156,10 @@ const initialState = {
   inventories: [],
   categories: [],
   subcategories: [],
+  productImages: {}, // Decoupled image state: { [productId]: { imageUrl, loading, error, ... } }
   loading: false,
   error: null,
-  imageLoadingStates: {},
+  imageLoadingStates: {}, // Keep for backward compatibility if needed, or remove. We'll use productImages for loading state too.
   lastFetchTimestamp: null,
   fetchRequestCount: 0,
   pages: {},
@@ -178,18 +176,27 @@ const productsSlice = createSlice({
   reducers: {
     setProducts(state, action) {
       const incoming = Array.isArray(action.payload) ? action.payload : (action.payload.items || []);
-      
+
       if (incoming.length === 0) return;
-      
+
       const existingIds = new Set(Object.keys(state.productsById));
       const newProducts = incoming.filter(p => !existingIds.has(String(p.id)));
-      
+
       if (newProducts.length === 0) return;
 
       newProducts.forEach(p => {
         state.productsById[p.id] = p;
+        // Populate initial image state if available
+        if (p.imageUrl) {
+          state.productImages[p.id] = {
+            imageUrl: p.imageUrl,
+            imageId: p.imageId,
+            loading: false,
+            error: null
+          };
+        }
       });
-      
+
       state.products = Object.values(state.productsById);
       state.lastFetchTimestamp = Date.now();
     },
@@ -197,7 +204,7 @@ const productsSlice = createSlice({
     updateProduct(state, action) {
       const product = action.payload;
       if (!product || !product.id) return;
-      
+
       if (state.productsById[product.id]) {
         state.productsById[product.id] = { ...state.productsById[product.id], ...product };
         const idx = state.products.findIndex(p => p.id === product.id);
@@ -247,27 +254,36 @@ const productsSlice = createSlice({
       })
       .addCase(fetchProducts.fulfilled, (state, action) => {
         const { items, pageNumber, hasMore, cached } = action.payload;
-        
+
         state.pageFetchStatus[pageNumber] = 'fulfilled';
-        
+
         if (!cached && items.length > 0) {
           const existingIds = new Set(Object.keys(state.productsById));
           const newProducts = items.filter(p => !existingIds.has(String(p.id)));
-          
+
           if (newProducts.length > 0) {
             newProducts.forEach(p => {
               state.productsById[p.id] = p;
+              // Populate initial image state if available
+              if (p.imageUrl) {
+                state.productImages[p.id] = {
+                  imageUrl: p.imageUrl,
+                  imageId: p.imageId,
+                  loading: false,
+                  error: null
+                };
+              }
             });
-            
+
             state.products = Object.values(state.productsById);
           }
-          
-          state.pages[pageNumber] = { 
-            ids: items.map(i => i.id), 
-            ts: Date.now() 
+
+          state.pages[pageNumber] = {
+            ids: items.map(i => i.id),
+            ts: Date.now()
           };
         }
-        
+
         state.hasMore = typeof hasMore === 'boolean' ? hasMore : state.hasMore;
         state.currentPage = Math.max(state.currentPage, pageNumber);
         state.loading = false;
@@ -282,26 +298,37 @@ const productsSlice = createSlice({
 
       .addCase(fetchProductImage.pending, (state, action) => {
         const id = action.meta.arg;
-        state.imageLoadingStates[id] = true;
+        if (!state.productImages[id]) {
+          state.productImages[id] = {};
+        }
+        state.productImages[id].loading = true;
+        state.productImages[id].error = null;
+        state.imageLoadingStates[id] = true; // Keep for compatibility
       })
       .addCase(fetchProductImage.fulfilled, (state, action) => {
         const { productId, imageUrl, cached } = action.payload;
         delete state.imageLoadingStates[productId];
-        
-        if (!cached && imageUrl && state.productsById[productId]) {
-          state.productsById[productId].imageUrl = imageUrl;
-          state.productsById[productId].imageId = action.payload.id;
-          state.productsById[productId].imageLoaded = true;
-          
-          const idx = state.products.findIndex(p => p.id === productId);
-          if (idx !== -1) {
-            state.products[idx] = state.productsById[productId];
-          }
-        }
+
+        state.productImages[productId] = {
+          ...state.productImages[productId],
+          imageUrl: imageUrl || null,
+          imageId: action.payload.id,
+          loading: false,
+          error: null,
+          lastFetched: Date.now()
+        };
+
+        // OPTIMIZATION: We do NOT update the main product object or the products array here.
+        // This prevents the massive re-render storm.
+        // The UI components must subscribe to state.products.productImages[id] to see the image.
       })
       .addCase(fetchProductImage.rejected, (state, action) => {
         const id = action.meta.arg;
         delete state.imageLoadingStates[id];
+        if (state.productImages[id]) {
+          state.productImages[id].loading = false;
+          state.productImages[id].error = action.payload;
+        }
       });
   }
 });

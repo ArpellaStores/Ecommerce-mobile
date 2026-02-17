@@ -53,10 +53,10 @@ if (!global.__arpella_image_helpers__) {
       const { dir, path } = await global.__arpella_image_helpers__.getCachedFilePath(uri)
       const info = await FileSystem.getInfoAsync(path)
       if (info.exists) return path
-      await FileSystem.makeDirectoryAsync(dir, { intermediates: true }).catch(() => {})
+      await FileSystem.makeDirectoryAsync(dir, { intermediates: true }).catch(() => { })
       const res = await FileSystem.downloadAsync(uri, path)
       if (res && (res.status === 200 || typeof res.status === 'undefined')) return path
-      await FileSystem.deleteAsync(path).catch(() => {})
+      await FileSystem.deleteAsync(path).catch(() => { })
       return null
     } catch (e) {
       return null
@@ -95,17 +95,17 @@ const ProductImage = memo(
       prefetched.current = new Set()
     }, [productId])
 
-    const storeProduct = useSelector((state) => (productId ? state.products?.productsById?.[productId] : undefined))
-    const isImageLoading = useSelector((state) => (productId ? state.products?.imageLoadingStates?.[productId] || false : false))
+    const storeImage = useSelector((state) => (productId ? state.products?.productImages?.[productId] : undefined))
+    const isImageLoading = storeImage?.loading || false;
 
     const uri = useMemo(
       () =>
-        storeProduct?.imageUrl ??
+        storeImage?.imageUrl ??
         product?.imageUrl ??
         product?.image ??
         product?.productimages?.[0]?.imageUrl ??
         null,
-      [storeProduct?.imageUrl, product?.imageUrl, product?.image, product?.productimages]
+      [storeImage?.imageUrl, product?.imageUrl, product?.image, product?.productimages]
     )
 
     const [imageState, setImageState] = useState({
@@ -118,12 +118,13 @@ const ProductImage = memo(
     useEffect(() => {
       if (!productId) return
       if (!fetchAttempted.current) {
-        if ((storeProduct == null && !isImageLoading) || (storeProduct && !storeProduct.imageUrl && !isImageLoading)) {
+        // If we don't have an image in our store state, try to fetch it
+        if (!storeImage || (!storeImage.imageUrl && !storeImage.loading && !storeImage.error)) {
           fetchAttempted.current = true
           dispatch(fetchProductImage(productId))
         }
       }
-    }, [productId, storeProduct, isImageLoading, dispatch])
+    }, [productId, storeImage, dispatch])
 
     useEffect(() => {
       if (noImageTimer.current) {
@@ -132,7 +133,10 @@ const ProductImage = memo(
       }
 
       if (isImageLoading) {
-        setImageState((prev) => ({ ...prev, showSpinner: true, showNoImage: false }))
+        // Only show spinner if we don't have a URI yet
+        if (!uri) {
+          setImageState((prev) => ({ ...prev, showSpinner: true, showNoImage: false }))
+        }
         return
       }
 
@@ -313,16 +317,16 @@ const Home = () => {
 
     const cats = Array.isArray(rawCategories)
       ? rawCategories.map((c) => {
-          const id = c.id ?? c._id ?? c.categoryId ?? c.category
-          const name = resolveCategoryName(c)
-          let subs = []
-          if (Array.isArray(c.subcategories) && c.subcategories.length > 0) {
-            subs = c.subcategories.map((sc) => ({ ...sc, id: sc.id ?? sc._id ?? sc.subcategoryId ?? sc.subcategory, subcategoryName: resolveSubName(sc) }))
-          } else {
-            subs = byCat[String(id)] || []
-          }
-          return { ...c, id, name, subcategories: subs }
-        })
+        const id = c.id ?? c._id ?? c.categoryId ?? c.category
+        const name = resolveCategoryName(c)
+        let subs = []
+        if (Array.isArray(c.subcategories) && c.subcategories.length > 0) {
+          subs = c.subcategories.map((sc) => ({ ...sc, id: sc.id ?? sc._id ?? sc.subcategoryId ?? sc.subcategory, subcategoryName: resolveSubName(sc) }))
+        } else {
+          subs = byCat[String(id)] || []
+        }
+        return { ...c, id, name, subcategories: subs }
+      })
       : []
 
     return [{ id: 'All', name: 'All', subcategories: [] }, ...cats]
