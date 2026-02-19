@@ -2,7 +2,7 @@ export default ({ config }) => ({
   expo: {
     name: "Arpella",
     slug: "Arpella",
-    version: "1.0.8",
+    version: "1.0.9",
     orientation: "portrait",
     icon: "./assets/images/logo.jpeg",
     scheme: "arpella",
@@ -27,7 +27,7 @@ export default ({ config }) => ({
 
     android: {
       package: "com.mgachanja.Arpella",  // ✅ Correct package name
-      versionCode: 8,
+      versionCode: 9,
       // REMOVE hermesEnabled: false - let it use the global jsEngine setting
 
       adaptiveIcon: {
