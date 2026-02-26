@@ -78,4 +78,8 @@ yarn-error.*
 # typescript
 *.tsbuildinfo
 
+#builds 
+*.apk
+*.aab
+
 # @end expo-cli
