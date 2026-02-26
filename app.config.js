@@ -2,7 +2,7 @@ export default ({ config }) => ({
   expo: {
     name: "Arpella",
     slug: "Arpella",
-    version: "1.1.0",
+    version: "1.1.1",
     orientation: "portrait",
     icon: "./assets/images/logo.jpeg",
     scheme: "arpella",
@@ -26,7 +26,7 @@ export default ({ config }) => ({
 
     android: {
       package: "com.mgachanja.Arpella",  // ✅ Correct package name
-      versionCode: 9,
+      versionCode: 10,
       // REMOVE hermesEnabled: false - let it use the global jsEngine setting
 
       adaptiveIcon: {
@@ -48,7 +48,7 @@ export default ({ config }) => ({
     ios: {
       supportsTablet: true,
       bundleIdentifier: "com.mgachanja.arpella",
-      buildNumber: "8",
+      buildNumber: "10",
       // jsEngine: "hermes" is inherited from root level
       infoPlist: {
         NSAppTransportSecurity: {
