@@ -89,7 +89,9 @@ export default ({ config }) => ({
 
     extra: {
       googleMapsApiKey: process.env.GOOGLE_MAPS_API_KEY || "AIzaSyD-YPpUWHXNzvQjjXjqj7mvO2Idi72jREc",
-     
+      eas: {
+        projectId: "d30882e6-d17b-402b-a507-482d317253e2"
+      },
       router: {
         origin: false
       }
