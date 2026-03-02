@@ -26,7 +26,7 @@ export default ({ config }) => ({
 
     android: {
       package: "com.mgachanja.Arpella",  // ✅ Correct package name
-      versionCode: 30,
+      versionCode: 31,
       // REMOVE hermesEnabled: false - let it use the global jsEngine setting
 
       adaptiveIcon: {
