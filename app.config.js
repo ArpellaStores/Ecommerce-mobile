@@ -26,7 +26,7 @@ export default ({ config }) => ({
 
     android: {
       package: "com.mgachanja.Arpella",  // ✅ Correct package name
-      versionCode: 10,
+      versionCode: 11,
       // REMOVE hermesEnabled: false - let it use the global jsEngine setting
 
       adaptiveIcon: {
@@ -48,7 +48,7 @@ export default ({ config }) => ({
     ios: {
       supportsTablet: true,
       bundleIdentifier: "com.mgachanja.arpella",
-      buildNumber: "10",
+      buildNumber: "11",
       // jsEngine: "hermes" is inherited from root level
       infoPlist: {
         NSAppTransportSecurity: {
