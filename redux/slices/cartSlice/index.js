@@ -20,11 +20,12 @@ const cartSlice = createSlice({
      * @param {object} action.payload.product  Product object containing at least { id, quantity }
      */
     addItemToCart: (state, action) => {
-      const { product } = action.payload;
+      // Support both { product: { ... } } and direct { ... } payloads
+      const product = action.payload.product || action.payload;
       const { id, quantity = 1 } = product;
 
       if (!id) {
-        console.error('addItemToCart: Product ID is undefined');
+        console.error('addItemToCart: Product ID is missing', action.payload);
         return;
       }
 

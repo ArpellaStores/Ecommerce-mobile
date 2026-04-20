@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
+    "@react-native-async-storage/async-storage": "^2.1.0",
     "@react-native-community/checkbox": "^0.5.17",
     "@react-navigation/bottom-tabs": "^7.0.0",
     "@react-navigation/native": "^7.0.14",
@@ -28,6 +29,7 @@
     "dotenv": "^16.5.0",
     "expo": "^54.0.20",
     "expo-blur": "~15.0.7",
+    "expo-clipboard": "~8.0.7",
     "expo-constants": "~18.0.10",
     "expo-crypto": "~15.0.7",
     "expo-file-system": "~19.0.17",
@@ -70,8 +72,8 @@
     "react-redux": "^9.2.0",
     "react-toastify": "^11.0.0",
     "redux": "^5.0.1",
-    "updates": "^16.8.2",
-    "expo-clipboard": "~8.0.7"
+    "redux-persist": "^6.0.0",
+    "updates": "^16.8.2"
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",

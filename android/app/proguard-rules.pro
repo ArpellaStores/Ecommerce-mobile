@@ -11,29 +11,4 @@
 -keep class com.swmansion.reanimated.** { *; }
 -keep class com.facebook.react.turbomodule.** { *; }
 
-# React Native
--keep class com.facebook.react.** { *; }
--keep class com.facebook.jni.** { *; }
-
-# Expo
--keep class expo.modules.** { *; }
--keep class versioned.host.exp.exponent.** { *; }
-
-# React Native Screens
--keep class com.swmansion.rnscreens.** { *; }
-
-# React Native Maps
--keep class com.airbnb.android.react.maps.** { *; }
--keep class com.google.android.gms.maps.** { *; }
-
-# React Native Vector Icons
--keep class com.oblador.vectoricons.** { *; }
-
-# Generic
--keepattributes *Annotation*
--keepclassmembers class * {
-    @com.facebook.react.uimanager.annotations.ReactProp <methods>;
-    @com.facebook.react.uimanager.annotations.ReactPropGroup <methods>;
-}
-
 # Add any project specific keep options here:

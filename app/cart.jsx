@@ -39,7 +39,7 @@ const Checkout = () => {
   const insets = useSafeAreaInsets()
 
   const userPhone = useSelector((s) => s.auth.user?.phone)
-  const cartItems = useSelector((s) => s.cart.items || {})
+  const cartItems = useSelector((s) => s.cart?.items || {})
   const products = useSelector((s) => s.products.products || [])
 
   const cartCount = Object.values(cartItems || {}).reduce((sum, it) => sum + (Number(it?.quantity) || 0), 0)
@@ -53,7 +53,7 @@ const Checkout = () => {
   const [mpesaNumber, setMpesaNumber] = useState(userPhone || '254')
   const [mpesaError, setMpesaError] = useState('')
   const [buyerPin, setBuyerPin] = useState('')
-  const [location, setLocation] = useState(null)
+  const [location, setLocation] = useState({ latitude: -1.3626, longitude: 36.6566 })
   const [paymentSuccess, setPaymentSuccess] = useState(false)
 
   const [settings, setSettings] = useState({
@@ -130,35 +130,23 @@ const Checkout = () => {
   }
 
   const getCurrentLocation = async () => {
-    setLocationLoading(true)
-    try {
-      const { status } = await Location.requestForegroundPermissionsAsync()
-      if (status !== 'granted') {
-        Alert.alert('Permission Denied', 'Location permission is required for delivery')
-        setLocationLoading(false)
-        return
-      }
-      const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced })
-      const coords = {
-        latitude: loc.coords.latitude,
-        longitude: loc.coords.longitude,
-      }
-      setLocation(coords)
-      return coords
-    } catch (e) {
-      Alert.alert('Location Error', 'Unable to get your current location. Try again.')
-      return null
-    } finally {
-      setLocationLoading(false)
-    }
+    // PRE-SET FOR TESTING: Ngong
+    const coords = { latitude: -1.3626, longitude: 36.6566 }
+    setLocation(coords)
+    return coords
   }
 
-  const getProductById = (id) => products.find((p) => p.id === Number(id)) || {}
+  const getProductById = (id) => {
+    return products.find((p) => {
+      const pId = p.id ?? p._id ?? p.productId
+      return String(pId) === String(id)
+    }) || {}
+  }
 
   const buildFusedItems = () =>
     Object.entries(cartItems).map(([id, item]) => {
       const product = getProductById(id)
-      return { ...product, quantity: item.quantity, id: product.id ?? Number(id) }
+      return { ...item, ...product, quantity: item.quantity, id: product.id ?? product._id ?? product.productId ?? item.id ?? id }
     })
 
   const buildOrderItems = (fusedItems) =>
@@ -170,7 +158,7 @@ const Checkout = () => {
       const unitPrice = discounted !== null && qty >= discountThreshold ? discounted : basePrice
       const isDiscounted = discounted !== null && qty >= discountThreshold
       return {
-        productId: Number(i.id),
+        productId: i.id,
         quantity: qty,
         priceType: isDiscounted ? 'Discounted' : 'Retail',
         unitPrice: Number(unitPrice),
@@ -264,19 +252,7 @@ const Checkout = () => {
     setLoading(true)
 
     try {
-      let coords = location
-      if (!coords) {
-        try {
-          const loc = await Location.getCurrentPositionAsync({
-            accuracy: Location.Accuracy.Balanced,
-            maximumAge: 10000,
-            timeout: 5000,
-          })
-          coords = { latitude: loc.coords.latitude, longitude: loc.coords.longitude }
-        } catch {
-          coords = { latitude: -1.28333, longitude: 36.81667 }
-        }
-      }
+      let coords = location || { latitude: -1.3626, longitude: 36.6566 }
 
       const distance = calculateDistance(
         STORE_LOCATION.latitude,
@@ -311,6 +287,9 @@ const Checkout = () => {
         orderSource: "Ecommerce",
         orderItems,
       }
+
+      console.log('--- ORDER PAYLOAD SENT TO BACKEND ---');
+      console.log(JSON.stringify(payload, null, 2));
 
       const response = await axios.post(`${baseUrl}/order`, payload, {
         headers: { 'Content-Type': 'application/json' },
@@ -633,14 +612,20 @@ const Checkout = () => {
                 </View>
 
                 <Text style={styles.inputLabel}>M-Pesa Payment Number</Text>
-                <TextInput
-                  style={[styles.input, mpesaError ? { borderColor: 'red' } : null]}
-                  placeholder="e.g., 254712345678"
-                  value={mpesaNumber}
-                  onChangeText={handleMpesaChange}
-                  keyboardType="phone-pad"
-                  maxLength={12}
-                />
+                <Text style={styles.mpesaAdvice}>Please ensure this is your registered Safaricom number.</Text>
+                <View style={[styles.phoneInputContainer, mpesaError ? { borderColor: 'red' } : null]}>
+                  <View style={styles.phonePrefix}>
+                    <Text style={styles.phonePrefixText}>254</Text>
+                  </View>
+                  <TextInput
+                    style={styles.phoneInputBox}
+                    placeholder="7XXXXXXXX"
+                    value={(mpesaNumber || '').replace(/^254/, '')}
+                    onChangeText={handleMpesaChange}
+                    keyboardType="phone-pad"
+                    maxLength={9}
+                  />
+                </View>
                 {mpesaError ? <Text style={styles.errorText}>{mpesaError}</Text> : null}
 
                 <Text style={styles.inputLabel}>ID/Passport Number (optional)</Text>
@@ -740,7 +725,12 @@ const styles = StyleSheet.create({
   tableTotalLabel: { fontSize: 16, fontWeight: 'bold' },
   tableTotalValue: { fontSize: 16, fontWeight: 'bold', color: '#5a2428' },
   inputLabel: { fontSize: 14, fontWeight: 'bold', marginBottom: 5 },
+  mpesaAdvice: { fontSize: 12, color: '#666', marginBottom: 8 },
   input: { backgroundColor: 'white', borderWidth: 1, borderColor: '#ddd', borderRadius: 5, padding: 12, marginBottom: 15 },
+  phoneInputContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'white', borderWidth: 1, borderColor: '#ddd', borderRadius: 5, marginBottom: 15, overflow: 'hidden' },
+  phonePrefix: { backgroundColor: '#f0f0f0', paddingHorizontal: 15, paddingVertical: 14, borderRightWidth: 1, borderRightColor: '#ddd' },
+  phonePrefixText: { fontWeight: 'bold', color: '#5a2428', fontSize: 16 },
+  phoneInputBox: { flex: 1, padding: 12, fontSize: 16 },
   locationContainer: { marginBottom: 20, backgroundColor: 'white', borderWidth: 1, borderColor: '#ddd', borderRadius: 5, padding: 12, marginHorizontal: H_GUTTER },
   locationLabel: { fontSize: 14, fontWeight: 'bold', marginBottom: 5 },
   locationText: { marginBottom: 10 },

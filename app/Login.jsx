@@ -11,7 +11,6 @@ import {
   ScrollView,
   Platform,
   ActivityIndicator,
-  Modal,
 } from 'react-native';
 import { useForm, Controller } from 'react-hook-form';
 import FontAwesome from 'react-native-vector-icons/FontAwesome';
@@ -19,9 +18,9 @@ import { useRouter } from 'expo-router';
 import { useDispatch, useSelector } from 'react-redux';
 import { useToast } from 'react-native-toast-notifications';
 import logo from '../assets/images/logo.jpeg';
-import { loginUser } from '../redux/slices/authSlice';
+import { useLoginMutation } from '../redux/api/authApi';
+import { setCredentials } from '../redux/slices/authSlice';
 import ForgotPasswordModal from '../components/ForgotPasswordModal';
-import axios from 'axios';
 import { baseUrl } from '../constants/const.js';
 
 import {
@@ -34,7 +33,14 @@ const Login = () => {
   const router = useRouter();
   const dispatch = useDispatch();
   const toast = useToast();
-  const { isAuthenticated, isLoading } = useSelector((s) => s.auth);
+
+  // ─── Log EVERY auth state change ────────────────────────────────────────────
+  const authState = useSelector((s) => {
+    console.log('[AUTH SELECTOR] Full auth state from Redux:', JSON.stringify(s.auth, null, 2));
+    return s.auth;
+  }) || {};
+
+  const { isAuthenticated } = authState;
 
   const { control, handleSubmit, setValue, formState: { errors } } = useForm({
     defaultValues: { phone: '254' },
@@ -45,16 +51,11 @@ const Login = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [autoLoginAttempted, setAutoLoginAttempted] = useState(false);
   const [manualLoginPressed, setManualLoginPressed] = useState(false);
-
   const [forgotPasswordModal, setForgotPasswordModal] = useState(false);
 
-  const validatePassword = (value) => {
-    if (!value) return 'Password required';
-    const pattern = /^(?=.*[A-Z])(?=.*[a-z])(?=.*\d)(?=.*[^\w\s]).{8,}$/;
-    return pattern.test(value)
-      || 'Password must include uppercase, lowercase, number, special char (e.g., .,@,#), and be ≥8 chars';
-  };
+  const [loginApi] = useLoginMutation();
 
+  // ─── Load saved credentials on mount ────────────────────────────────────────
   useEffect(() => {
     (async () => {
       try {
@@ -77,115 +78,82 @@ const Login = () => {
     })();
   }, [setValue]);
 
-  const getErrorMessage = (error) => {
-    if (!error) return 'Login failed. Please try again.';
-
-    let message = '';
-
-    if (typeof error === 'string') {
-      message = error;
-    } else if (error.message) {
-      message = error.message;
-    } else if (error.data && typeof error.data === 'string') {
-      message = error.data;
-    } else if (error.response?.data?.message) {
-      message = error.response.data.message;
-    } else {
-      message = 'Login failed. Please try again.';
-    }
-
-    if (message.includes('Request failed with status code 400')) {
-      return 'Invalid phone number or password. Please check your credentials.';
-    } else if (message.includes('Request failed with status code 401')) {
-      return 'Invalid phone number or password. Please check your credentials.';
-    } else if (message.includes('Request failed with status code 404')) {
-      return 'Account not found. Please check your phone number or register.';
-    } else if (message.includes('Request failed with status code 500')) {
-      return 'Server error. Please try again later.';
-    } else if (message.includes('Network Error')) {
-      return 'Network error. Please check your internet connection.';
-    } else if (message.includes('timeout')) {
-      return 'Connection timeout. Please try again.';
-    }
-
-    return message;
-  };
-
-  const onSubmit = async (data) => {
-    if (isProcessing) return;
-    setManualLoginPressed(true);
-    setIsProcessing(true);
-
-    try {
-      const result = await dispatch(
-        loginUser({ phoneNumber: data.phone, passwordHash: data.password })
-      );
-
-      if (loginUser.fulfilled.match(result)) {
-        toast.show('Login successful!', { type: 'success' });
-
-        if (rememberMe) {
-          // Get the token from the result payload
-          const token = result.payload?.token || '';
-
-          await saveCredentials({
-            token: String(token),
-            phone: String(data.phone),
-            pass: String(data.password),
-          });
-        } else {
-          await clearCredentials();
-        }
-      } else {
-        const errorMessage = getErrorMessage(result.payload || result.error);
-        toast.show(errorMessage, { type: 'danger' });
-      }
-    } catch (e) {
-      console.error('Login error:', e);
-      const errorMessage = getErrorMessage(e);
-      toast.show(errorMessage, { type: 'danger' });
-    } finally {
-      setIsProcessing(false);
-    }
-  };
-
+  // ─── NAVIGATION EFFECT — log every time it fires ────────────────────────────
   useEffect(() => {
+    console.log('[NAV EFFECT] Fired. isAuthenticated =', isAuthenticated);
+
     if (isAuthenticated) {
       const delay = Platform.OS === 'ios' ? 300 : 0;
-      setTimeout(() => router.replace('/Home'), delay);
+      console.log(`[NAV EFFECT] isAuthenticated is TRUE → navigating to /Home in ${delay}ms`);
+      setTimeout(() => {
+        console.log('[NAV EFFECT] Calling router.replace("/Home") now');
+        router.replace('/Home');
+      }, delay);
+    } else {
+      console.log('[NAV EFFECT] isAuthenticated is FALSE → staying on Login');
     }
   }, [isAuthenticated, router]);
 
+  // ─── Auto-login ──────────────────────────────────────────────────────────────
   useEffect(() => {
     const performAutoLogin = async () => {
-      if (autoLoginAttempted || isAuthenticated || manualLoginPressed) return;
+      console.log('[AUTO-LOGIN] Checking conditions:', {
+        autoLoginAttempted,
+        isAuthenticated,
+        manualLoginPressed,
+      });
+
+      if (autoLoginAttempted || isAuthenticated || manualLoginPressed) {
+        console.log('[AUTO-LOGIN] Skipping — condition blocked it');
+        return;
+      }
       setAutoLoginAttempted(true);
 
       try {
         const { phone, pass, rememberMe: rem } = await loadCredentials();
-        if (!rem || !phone || !pass) return;
+        console.log('[AUTO-LOGIN] Loaded credentials:', { phone, hasPass: !!pass, rem });
+
+        if (!rem || !phone || !pass) {
+          console.log('[AUTO-LOGIN] No saved credentials — skipping');
+          return;
+        }
 
         setIsProcessing(true);
         if (Platform.OS === 'ios') {
           await new Promise((r) => setTimeout(r, 1000));
         }
 
-        const result = await dispatch(
-          loginUser({ phoneNumber: phone, passwordHash: pass })
-        );
+        const result = await loginApi({ userName: phone, passwordHash: pass }).unwrap();
+        console.log('[AUTO-LOGIN] Raw API result:', JSON.stringify(result, null, 2));
 
-        if (loginUser.fulfilled.match(result)) {
+        const userObject = Array.isArray(result) ? result[0] : result;
+        const token = userObject?.token || userObject?.Token || '';
+        const userData = {
+          ...userObject?.user,
+          firstName: userObject?.firstName || userObject?.user?.firstName,
+          lastName: userObject?.lastName || userObject?.user?.lastName,
+          role: userObject?.role || userObject?.user?.role,
+          phone: phone,
+        };
+
+        console.log('[AUTO-LOGIN] Parsed token:', token ? `${token.substring(0, 20)}...` : 'MISSING');
+        console.log('[AUTO-LOGIN] Parsed userData:', JSON.stringify(userData, null, 2));
+
+        if (token) {
+          console.log('[AUTO-LOGIN] Dispatching setCredentials...');
+          dispatch(setCredentials({ token, user: userData }));
+          console.log('[AUTO-LOGIN] setCredentials dispatched — waiting for isAuthenticated to update');
           toast.show('Welcome back!', { type: 'success' });
         } else {
-          const errorMessage = getErrorMessage(result.payload || result.error);
-          toast.show(errorMessage, { type: 'danger' });
+          console.warn('[AUTO-LOGIN] No token in response — aborting');
+          toast.show('Auto-login failed. Please log in again.', { type: 'danger' });
           await clearCredentials();
           setRememberMe(false);
         }
       } catch (e) {
-        console.error('Auto-login error:', e);
-        const errorMessage = getErrorMessage(e);
-        toast.show(errorMessage, { type: 'danger' });
+        if (e?.name === 'AbortError') return;
+        console.error('[AUTO-LOGIN] Error:', e);
+        toast.show(getErrorMessage(e), { type: 'danger' });
         await clearCredentials();
         setRememberMe(false);
       } finally {
@@ -198,18 +166,99 @@ const Login = () => {
       Platform.OS === 'ios' ? 1000 : 300
     );
     return () => clearTimeout(timer);
-  }, [
-    autoLoginAttempted,
-    isAuthenticated,
-    manualLoginPressed,
-    dispatch,
-    toast,
-  ]);
+  }, [autoLoginAttempted, isAuthenticated, manualLoginPressed, dispatch, toast]);
 
-  const openForgotPasswordModal = () => {
-    setForgotPasswordModal(true);
+  // ─── Error helper ────────────────────────────────────────────────────────────
+  const getErrorMessage = (error) => {
+    if (!error) return 'Login failed. Please try again.';
+
+    let message =
+      typeof error === 'string'
+        ? error
+        : error.message ||
+          (typeof error.data === 'string' ? error.data : null) ||
+          error.response?.data?.message ||
+          'Login failed. Please try again.';
+
+    if (message.includes('status code 400') || message.includes('status code 401')) {
+      return 'Invalid phone number or password. Please check your credentials.';
+    } else if (message.includes('status code 404')) {
+      return 'Account not found. Please check your phone number or register.';
+    } else if (message.includes('status code 500')) {
+      return 'Server error. Please try again later.';
+    } else if (message.includes('Network Error')) {
+      return 'Network error. Please check your internet connection.';
+    } else if (message.includes('timeout')) {
+      return 'Connection timeout. Please try again.';
+    }
+
+    return message;
   };
 
+  // ─── Password validator ──────────────────────────────────────────────────────
+  const validatePassword = (value) => {
+    if (!value) return 'Password required';
+    const pattern = /^(?=.*[A-Z])(?=.*[a-z])(?=.*\d)(?=.*[^\w\s]).{8,}$/;
+    return (
+      pattern.test(value) ||
+      'Password must include uppercase, lowercase, number, special char (e.g., .,@,#), and be ≥8 chars'
+    );
+  };
+
+  // ─── Manual login ────────────────────────────────────────────────────────────
+  const onSubmit = async (data) => {
+    if (isProcessing) return;
+    console.log('[LOGIN] Manual login started');
+    setManualLoginPressed(true);
+    setIsProcessing(true);
+
+    try {
+      console.log('[LOGIN] Sending request to:', `${baseUrl}/login?platform=mobile`);
+      const result = await loginApi({
+        userName: data.phone,
+        passwordHash: data.password,
+      }).unwrap();
+
+      console.log('[LOGIN] Raw API result:', JSON.stringify(result, null, 2));
+
+      const userObject = Array.isArray(result) ? result[0] : result;
+      const token = userObject?.token || userObject?.Token || '';
+      const userData = {
+        ...userObject?.user,
+        firstName: userObject?.firstName || userObject?.user?.firstName,
+        lastName: userObject?.lastName || userObject?.user?.lastName,
+        role: userObject?.role || userObject?.user?.role,
+        phone: data.phone,
+      };
+
+      console.log('[LOGIN] Parsed token:', token ? `${token.substring(0, 20)}...` : 'MISSING');
+      console.log('[LOGIN] Parsed userData:', JSON.stringify(userData, null, 2));
+
+      if (token) {
+        console.log('[LOGIN] Dispatching setCredentials...');
+        dispatch(setCredentials({ token, user: userData }));
+        console.log('[LOGIN] setCredentials dispatched — Redux should update isAuthenticated next');
+        toast.show('Login successful!', { type: 'success' });
+
+        saveCredentials({
+          token: String(token),
+          phone: String(data.phone),
+          pass: rememberMe ? String(data.password) : null,
+          rememberMe,
+        }).catch((e) => console.error('[LOGIN] saveCredentials error:', e));
+      } else {
+        console.warn('[LOGIN] No token found in response — not dispatching');
+        toast.show('Login failed. Invalid response from server.', { type: 'danger' });
+      }
+    } catch (e) {
+      console.error('[LOGIN] onSubmit error:', e);
+      toast.show(getErrorMessage(e), { type: 'danger' });
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // ─── UI ──────────────────────────────────────────────────────────────────────
   return (
     <ScrollView contentContainerStyle={styles.container}>
       <View style={styles.headerContainer}>
@@ -220,6 +269,7 @@ const Login = () => {
       <View style={styles.formContainer}>
         <Text style={styles.formTitle}>Login to Your Account</Text>
 
+        {/* Phone */}
         <Controller
           control={control}
           name="phone"
@@ -250,7 +300,7 @@ const Login = () => {
                   onChangeText={handlePhoneChange}
                   value={value || '254'}
                   maxLength={12}
-                  editable={!isProcessing && !isLoading}
+                  editable={!isProcessing}
                 />
                 {error && <Text style={styles.errorText}>{error.message}</Text>}
               </View>
@@ -258,6 +308,7 @@ const Login = () => {
           }}
         />
 
+        {/* Password */}
         <Controller
           control={control}
           name="password"
@@ -273,12 +324,12 @@ const Login = () => {
                   onBlur={onBlur}
                   onChangeText={onChange}
                   value={value}
-                  editable={!isProcessing && !isLoading}
+                  editable={!isProcessing}
                 />
                 <TouchableOpacity
                   onPress={() => setPasswordVisible((v) => !v)}
                   style={styles.eyeIcon}
-                  disabled={isProcessing || isLoading}
+                  disabled={isProcessing}
                 >
                   <FontAwesome
                     name={passwordVisible ? 'eye-slash' : 'eye'}
@@ -292,27 +343,29 @@ const Login = () => {
           )}
         />
 
+        {/* Remember Me */}
         <TouchableOpacity
           style={styles.rememberMeContainer}
           onPress={() => setRememberMe((v) => !v)}
-          disabled={isProcessing || isLoading}
+          disabled={isProcessing}
         >
           <FontAwesome
             name={rememberMe ? 'check-square' : 'square-o'}
             size={24}
-            color={isProcessing || isLoading ? '#ccc' : '#4B2C20'}
+            color={isProcessing ? '#ccc' : '#4B2C20'}
           />
-          <Text style={[styles.rememberMeText, (isProcessing || isLoading) && styles.disabledText]}>
+          <Text style={[styles.rememberMeText, isProcessing && styles.disabledText]}>
             Remember Me
           </Text>
         </TouchableOpacity>
 
+        {/* Login Button */}
         <TouchableOpacity
-          style={[styles.button, (isProcessing || isLoading) && styles.buttonDisabled]}
+          style={[styles.button, isProcessing && styles.buttonDisabled]}
           onPress={handleSubmit(onSubmit)}
-          disabled={isProcessing || isLoading}
+          disabled={isProcessing}
         >
-          {(isProcessing || isLoading) ? (
+          {isProcessing ? (
             <View style={styles.buttonContent}>
               <ActivityIndicator size="small" color="#FFF" />
               <Text style={styles.buttonText}>Logging in...</Text>
@@ -322,16 +375,18 @@ const Login = () => {
           )}
         </TouchableOpacity>
 
+        {/* Forgot Password */}
         <TouchableOpacity
-          style={[styles.forgotButton, (isProcessing || isLoading) && styles.buttonDisabled]}
-          onPress={openForgotPasswordModal}
-          disabled={isProcessing || isLoading}
+          style={[styles.forgotButton, isProcessing && styles.buttonDisabled]}
+          onPress={() => setForgotPasswordModal(true)}
+          disabled={isProcessing}
         >
           <Text style={styles.forgotButtonText}>Forgot Password?</Text>
         </TouchableOpacity>
       </View>
 
-      {(isProcessing || isLoading) && (
+      {/* Loading Backdrop */}
+      {isProcessing && (
         <View style={styles.backdrop}>
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="large" color="#4B2C20" />
@@ -340,26 +395,21 @@ const Login = () => {
         </View>
       )}
 
+      {/* Social / Register Buttons */}
       <View style={styles.socialButtons}>
         <TouchableOpacity
           onPress={() => router.replace('/')}
           style={styles.socialButton}
-          disabled={isProcessing || isLoading}
+          disabled={isProcessing}
         >
           <FontAwesome name="user" size={20} color="#000" />
           <Text style={styles.socialButtonText}>Don't have an account? Register</Text>
         </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.socialButton}
-          disabled={isProcessing || isLoading}
-        >
+        <TouchableOpacity style={styles.socialButton} disabled={isProcessing}>
           <FontAwesome name="google" size={20} color="#db4437" />
           <Text style={styles.socialButtonText}>Login with Google</Text>
         </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.socialButton}
-          disabled={isProcessing || isLoading}
-        >
+        <TouchableOpacity style={styles.socialButton} disabled={isProcessing}>
           <FontAwesome name="facebook" size={20} color="#3b5998" />
           <Text style={styles.socialButtonText}>Login with Facebook</Text>
         </TouchableOpacity>
@@ -552,7 +602,7 @@ const styles = StyleSheet.create({
     color: 'red',
     marginTop: 6,
     fontSize: 13,
-  }
+  },
 });
 
 export default Login;
