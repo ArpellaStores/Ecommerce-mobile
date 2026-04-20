@@ -30,12 +30,6 @@ axios.interceptors.request.use(
       config.headers.Authorization = `Bearer ${token}`
     }
     
-    // Add logging consistent with RTK Query tracing
-    console.log(`\n[AXIOS REQUEST] ${config.method?.toUpperCase()} ${config.url}`)
-    if (config.data) {
-      console.log(`[AXIOS PAYLOAD]`, JSON.stringify(config.data, null, 2))
-    }
-    
     return config
   },
   (error) => Promise.reject(error)
@@ -43,23 +37,9 @@ axios.interceptors.request.use(
 
 axios.interceptors.response.use(
   (response) => {
-    console.log(`[AXIOS RESPONSE] ${response.config.method?.toUpperCase()} ${response.config.url} -> SUCCESS`)
-    if (response.data) {
-      if (Array.isArray(response.data)) {
-        console.log(`[AXIOS DATA] Count: ${response.data.length}`)
-      } else {
-        console.log(`[AXIOS DATA]`, JSON.stringify(response.data).substring(0, 500))
-      }
-    }
     return response
   },
   (error) => {
-    console.log(`[AXIOS ERROR] ${error.config?.method?.toUpperCase()} ${error.config?.url} -> Status: ${error.response?.status}`)
-    if (error.response?.data) {
-      console.log(`[AXIOS ERROR DETAIL]`, JSON.stringify(error.response.data, null, 2))
-    } else {
-      console.log(`[AXIOS ERROR MESSAGE]`, error.message)
-    }
     return Promise.reject(error)
   }
 )
@@ -106,7 +86,6 @@ function AppContent() {
           (await SecureStore.getItemAsync('token'))
         if (!mounted) return
         const route = token ? 'Home' : 'Login'
-        console.log('[LAYOUT bootstrap] SecureStore token found:', !!token, '→ initialRoute:', route)
         setInitialRoute(route)
       } catch (e) {
         console.error('[LAYOUT bootstrap] error:', e)
@@ -123,25 +102,19 @@ function AppContent() {
   useEffect(() => {
     if (isChecking || !initialRoute) return
 
-    console.log('[LAYOUT auth guard] isAuthenticated:', isAuthenticated, '| initialRoute:', initialRoute, '| hasNavigatedToHome:', hasNavigatedToHomeRef.current)
-
-    // If we've already sent the user to Home this session, don't touch navigation
-    // even if isAuthenticated temporarily flips false (e.g. persist rehydration race)
     if (hasNavigatedToHomeRef.current) {
-      console.log('[LAYOUT auth guard] Already navigated to Home — skipping guard')
       return
     }
 
     const effectiveAuth = typeof isAuthenticated === 'boolean' ? isAuthenticated : null
     const target = effectiveAuth === null ? initialRoute : effectiveAuth ? 'Home' : 'Login'
 
-    console.log('[LAYOUT auth guard] effectiveAuth:', effectiveAuth, '→ target:', target)
 
     const currentPath = router.getPathname?.() ?? ''
-    console.log('[LAYOUT auth guard] currentPath:', currentPath)
+
 
     if (!currentPath.includes(`/${target}`)) {
-      console.log('[LAYOUT auth guard] Navigating to:', target)
+
       if (target === 'Home') {
         hasNavigatedToHomeRef.current = true
       }

@@ -128,15 +128,7 @@ const Home = () => {
     return Object.values(items).reduce((sum, it) => sum + (Number(it?.quantity) || 0), 0)
   }, [cartState])
 
-  useEffect(() => {
-    console.log('[CART DEBUG] cartState changed:', {
-      keys: cartState ? Object.keys(cartState) : [],
-      itemsType: Array.isArray(cartState?.items) ? 'array' : typeof cartState?.items,
-      items: cartState?.items,
-      cartItems: cartState?.cartItems,
-      raw: cartState,
-    })
-  }, [cartState])
+
 
   const { width, height } = useWindowDimensions()
   const isLandscape = width > height
@@ -328,7 +320,6 @@ const Home = () => {
   }, [])
 
   const onSelectProduct = useCallback((product) => {
-    console.log('[SELECT PRODUCT]', product)
     setSelectedProduct({ ...product, quantity: 1 })
     setModalVisible(true)
   }, [])
@@ -371,11 +362,9 @@ const Home = () => {
       item: selectedProduct,
     }
 
-    console.log('[ADD TO CART] payload:', cartItem)
 
     try {
       const result = dispatch(addItemToCart(cartItem))
-      console.log('[ADD TO CART] dispatch result:', result)
     } catch (error) {
       console.error('[ADD TO CART] dispatch failed:', error)
       Alert.alert('Cart Error', error?.message || 'Failed to add item to cart')
@@ -420,12 +409,6 @@ const Home = () => {
         item.inventoryCount ??
         null
       const isOutOfStock = availableQty !== null && Number(availableQty) <= 0
-
-      console.log(
-        `[RENDER CARD] Rendering product: ${item.name || item.productName} | ID: ${item.id} | Image: ${
-          item.imageUrl || item.image || 'NONE'
-        }`
-      )
 
       return (
         <TouchableOpacity

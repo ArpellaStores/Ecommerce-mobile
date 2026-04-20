@@ -35,10 +35,8 @@ const Login = () => {
   const toast = useToast();
 
   // ─── Log EVERY auth state change ────────────────────────────────────────────
-  const authState = useSelector((s) => {
-    console.log('[AUTH SELECTOR] Full auth state from Redux:', JSON.stringify(s.auth, null, 2));
-    return s.auth;
-  }) || {};
+  const authState = useSelector((s) => s.auth) || {};
+
 
   const { isAuthenticated } = authState;
 
@@ -80,41 +78,26 @@ const Login = () => {
 
   // ─── NAVIGATION EFFECT — log every time it fires ────────────────────────────
   useEffect(() => {
-    console.log('[NAV EFFECT] Fired. isAuthenticated =', isAuthenticated);
-
     if (isAuthenticated) {
       const delay = Platform.OS === 'ios' ? 300 : 0;
-      console.log(`[NAV EFFECT] isAuthenticated is TRUE → navigating to /Home in ${delay}ms`);
       setTimeout(() => {
-        console.log('[NAV EFFECT] Calling router.replace("/Home") now');
         router.replace('/Home');
       }, delay);
-    } else {
-      console.log('[NAV EFFECT] isAuthenticated is FALSE → staying on Login');
     }
   }, [isAuthenticated, router]);
 
   // ─── Auto-login ──────────────────────────────────────────────────────────────
   useEffect(() => {
     const performAutoLogin = async () => {
-      console.log('[AUTO-LOGIN] Checking conditions:', {
-        autoLoginAttempted,
-        isAuthenticated,
-        manualLoginPressed,
-      });
-
       if (autoLoginAttempted || isAuthenticated || manualLoginPressed) {
-        console.log('[AUTO-LOGIN] Skipping — condition blocked it');
         return;
       }
       setAutoLoginAttempted(true);
 
       try {
         const { phone, pass, rememberMe: rem } = await loadCredentials();
-        console.log('[AUTO-LOGIN] Loaded credentials:', { phone, hasPass: !!pass, rem });
 
         if (!rem || !phone || !pass) {
-          console.log('[AUTO-LOGIN] No saved credentials — skipping');
           return;
         }
 
@@ -124,7 +107,7 @@ const Login = () => {
         }
 
         const result = await loginApi({ userName: phone, passwordHash: pass }).unwrap();
-        console.log('[AUTO-LOGIN] Raw API result:', JSON.stringify(result, null, 2));
+
 
         const userObject = Array.isArray(result) ? result[0] : result;
         const token = userObject?.token || userObject?.Token || '';
@@ -136,13 +119,9 @@ const Login = () => {
           phone: phone,
         };
 
-        console.log('[AUTO-LOGIN] Parsed token:', token ? `${token.substring(0, 20)}...` : 'MISSING');
-        console.log('[AUTO-LOGIN] Parsed userData:', JSON.stringify(userData, null, 2));
 
         if (token) {
-          console.log('[AUTO-LOGIN] Dispatching setCredentials...');
           dispatch(setCredentials({ token, user: userData }));
-          console.log('[AUTO-LOGIN] setCredentials dispatched — waiting for isAuthenticated to update');
           toast.show('Welcome back!', { type: 'success' });
         } else {
           console.warn('[AUTO-LOGIN] No token in response — aborting');
@@ -208,18 +187,15 @@ const Login = () => {
   // ─── Manual login ────────────────────────────────────────────────────────────
   const onSubmit = async (data) => {
     if (isProcessing) return;
-    console.log('[LOGIN] Manual login started');
     setManualLoginPressed(true);
     setIsProcessing(true);
 
     try {
-      console.log('[LOGIN] Sending request to:', `${baseUrl}/login?platform=mobile`);
       const result = await loginApi({
         userName: data.phone,
         passwordHash: data.password,
       }).unwrap();
 
-      console.log('[LOGIN] Raw API result:', JSON.stringify(result, null, 2));
 
       const userObject = Array.isArray(result) ? result[0] : result;
       const token = userObject?.token || userObject?.Token || '';
@@ -231,13 +207,9 @@ const Login = () => {
         phone: data.phone,
       };
 
-      console.log('[LOGIN] Parsed token:', token ? `${token.substring(0, 20)}...` : 'MISSING');
-      console.log('[LOGIN] Parsed userData:', JSON.stringify(userData, null, 2));
 
       if (token) {
-        console.log('[LOGIN] Dispatching setCredentials...');
         dispatch(setCredentials({ token, user: userData }));
-        console.log('[LOGIN] setCredentials dispatched — Redux should update isAuthenticated next');
         toast.show('Login successful!', { type: 'success' });
 
         saveCredentials({

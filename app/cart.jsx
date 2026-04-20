@@ -54,7 +54,7 @@ const Checkout = () => {
   const [mpesaNumber, setMpesaNumber] = useState(userPhone || '254')
   const [mpesaError, setMpesaError] = useState('')
   const [buyerPin, setBuyerPin] = useState('')
-  const [location, setLocation] = useState({ latitude: -1.3626, longitude: 36.6566 })
+  const [location, setLocation] = useState(null)
   const [paymentSuccess, setPaymentSuccess] = useState(false)
 
   const [settings, setSettings] = useState({
@@ -70,10 +70,14 @@ const Checkout = () => {
     ;(async () => {
       try {
         const { status } = await Location.requestForegroundPermissionsAsync()
-        if (status !== 'granted') {
-          Alert.alert('Permission Denied', 'Location permission is required for delivery')
+        if (status === 'granted') {
+          await getCurrentLocation()
+        } else {
+          Alert.alert('Permission Denied', 'Location permission is required for delivery calculation. You can manually set it in the checkout modal.')
         }
-      } catch {}
+      } catch (err) {
+        // Fallback or ignore
+      }
     })()
   }, [])
 
@@ -131,10 +135,31 @@ const Checkout = () => {
   }
 
   const getCurrentLocation = async () => {
-    // PRE-SET FOR TESTING: Ngong
-    const coords = { latitude: -1.3626, longitude: 36.6566 }
-    setLocation(coords)
-    return coords
+    setLocationLoading(true)
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync()
+      if (status !== 'granted') {
+        Alert.alert('Permission Denied', 'Location permission is required for delivery calculation.')
+        return null
+      }
+      
+      const loc = await Location.getCurrentPositionAsync({ 
+        accuracy: Location.Accuracy.Balanced 
+      })
+      
+      const coords = { 
+        latitude: loc.coords.latitude, 
+        longitude: loc.coords.longitude 
+      }
+      
+      setLocation(coords)
+      return coords
+    } catch (e) {
+      Alert.alert('Location Error', 'Could not fetch your current location. Please ensure location services are enabled.')
+      return null
+    } finally {
+      setLocationLoading(false)
+    }
   }
 
   const getProductById = (id) => {
@@ -253,7 +278,12 @@ const Checkout = () => {
     setLoading(true)
 
     try {
-      let coords = location || { latitude: -1.3626, longitude: 36.6566 }
+      if (!location) {
+        setLoading(false)
+        Alert.alert('Location Missing', 'We need your current location for delivery. Please tap "Get Location" in the checkout window.')
+        return
+      }
+      let coords = location
 
       const distance = calculateDistance(
         STORE_LOCATION.latitude,
@@ -289,8 +319,7 @@ const Checkout = () => {
         orderItems,
       }
 
-      console.log('--- ORDER PAYLOAD SENT TO BACKEND ---');
-      console.log(JSON.stringify(payload, null, 2));
+
 
       const response = await axios.post(`${baseUrl}/order`, payload, {
         headers: { 'Content-Type': 'application/json' },
@@ -632,7 +661,11 @@ const Checkout = () => {
 
                 <View style={styles.locationContainer}>
                   <Text style={styles.locationLabel}>Delivery Location:</Text>
-                  <Text style={styles.locationText}>{location ? `${location.latitude.toFixed(6)}, ${location.longitude.toFixed(6)}` : 'Not set'}</Text>
+                  <Text style={[styles.locationText, !location && { color: '#d32f2f', fontWeight: 'bold' }]}>
+                    {location 
+                      ? `${location.latitude.toFixed(6)}, ${location.longitude.toFixed(6)}` 
+                      : 'Locating you... (Tap "Get Location" if it takes too long)'}
+                  </Text>
                   <TouchableOpacity style={styles.locationButton} onPress={getCurrentLocation} disabled={locationLoading}>
                     {locationLoading ? <ActivityIndicator size="small" color="#fff" /> : <Text style={styles.locationButtonText}>{location ? 'Update Location' : 'Get Location'}</Text>}
                   </TouchableOpacity>

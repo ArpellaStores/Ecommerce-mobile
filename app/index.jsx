@@ -239,7 +239,6 @@ const Register = () => {
       reset();
       router.replace('/Login');
     } catch (err) {
-      console.log('OTP verification or registration error caught:', err);
       
       // Check if it's an OTP verification error
       if (err?.message && err.message.includes('OTP')) {

@@ -24,25 +24,10 @@ const baseQueryWithLogout = async (args, queryApi, extraOptions) => {
   const method = typeof args === "string" ? "GET" : args.method || "GET";
   const body = args.body;
   
-  console.log(`\n[API REQUEST] ${method} ${url}`);
-  if (body) console.log(`[API PAYLOAD]`, JSON.stringify(body, null, 2));
-
   const result = await baseQuery(args, queryApi, extraOptions);
-  
-  if (result.data) {
-    console.log(`[API RESPONSE] ${method} ${url} -> SUCCESS`);
-    // Only log first 500 chars of data to avoid bloat, or just the count if it's an array
-    if (Array.isArray(result.data)) {
-       console.log(`[API DATA] Count: ${result.data.length}`);
-    } else {
-       console.log(`[API DATA]`, JSON.stringify(result.data).substring(0, 500));
-    }
-  }
 
-  if (result.error) {
-     console.log(`[API ERROR] ${method} ${url} -> Status: ${result.error.status}`);
-     console.log(`[API ERROR DETAIL]`, JSON.stringify(result.error, null, 2));
-  }
+  
+
 
   if (result?.error?.status === 401 && !url?.includes("login")) {
     queryApi.dispatch(api.util.resetApiState());

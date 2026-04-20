@@ -127,16 +127,15 @@ const ProductImage = memo(
 
     const isImageLoading = isImageLoadingInStore || (isFetchingQuery && !uri)
 
-    useEffect(() => {
-      if (fetchedImageData?.imageUrl && productId) {
-        console.log(`[PRODUCT IMAGE] Syncing fetched image for ${productId}:`, fetchedImageData.imageUrl)
-        dispatch(setProductImageData({ 
-          productId, 
-          imageUrl: fetchedImageData.imageUrl, 
-          id: fetchedImageData.id 
-        }))
-      }
-    }, [fetchedImageData, productId, dispatch])
+  useEffect(() => {
+    if (fetchedImageData?.imageUrl && productId) {
+      dispatch(setProductImageData({ 
+        productId, 
+        imageUrl: fetchedImageData.imageUrl, 
+        id: fetchedImageData.id 
+      }))
+    }
+  }, [fetchedImageData, productId, dispatch])
 
     const [imageState, setImageState] = useState({
       showSpinner: false,
