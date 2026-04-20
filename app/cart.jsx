@@ -21,6 +21,7 @@ import axios from 'axios'
 import { baseUrl } from '../constants/const.js'
 import * as Clipboard from 'expo-clipboard'
 import BottomNav from '../components/BottomNav'
+import ProductImage from '../components/ProductImage'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 
 const STORE_LOCATION = {
@@ -443,10 +444,8 @@ const Checkout = () => {
             return (
               <TouchableOpacity key={String(item.id)} style={styles.cartItem} onPress={() => openEditModal(item)} activeOpacity={0.7}>
                 <View style={styles.cartItemRow}>
-                  <Image
-                    source={{
-                      uri: item.productimages?.[0]?.imageUrl || item.imageUrl || 'https://via.placeholder.com/150',
-                    }}
+                  <ProductImage
+                    product={item}
                     style={styles.cartItemImage}
                   />
                   <View style={styles.cartItemDetails}>
@@ -496,8 +495,8 @@ const Checkout = () => {
                 <>
                   <Text style={styles.editModalTitle}>Edit Item</Text>
 
-                  <Image
-                    source={{ uri: selectedItem.productimages?.[0]?.imageUrl || selectedItem.imageUrl || 'https://via.placeholder.com/150' }}
+                  <ProductImage
+                    product={selectedItem}
                     style={styles.editItemImage}
                   />
 
@@ -586,7 +585,7 @@ const Checkout = () => {
                     const unit = discounted !== null && qty >= discountThreshold ? discounted : basePrice
                     return (
                       <View style={styles.tableRow} key={String(item.id)}>
-                        <Image source={{ uri: item.productimages?.[0]?.imageUrl || item.imageUrl || 'https://via.placeholder.com/150' }} style={styles.tableImage} />
+                        <ProductImage product={item} style={styles.tableImage} />
                         <Text style={styles.tableCell} numberOfLines={1}>
                           {item.name}
                         </Text>

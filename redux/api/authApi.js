@@ -7,8 +7,8 @@ export const authApi = api.injectEndpoints({
         url: "/login?platform=mobile",
         method: "POST",
         body: {
-          phoneNumber: credentials.phoneNumber || credentials.userName,
-          password: credentials.password || credentials.passwordHash,
+          userName: credentials.userName || credentials.phoneNumber,
+          passwordHash: credentials.passwordHash || credentials.password,
         },
       }),
     }),
