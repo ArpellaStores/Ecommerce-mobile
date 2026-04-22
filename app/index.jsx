@@ -18,7 +18,8 @@ import {
 } from 'react-native';
 import { useDispatch, useSelector } from 'react-redux';
 import { useForm, Controller } from 'react-hook-form';
-import { registerUser, sendOtp, verifyOtp, resetOtpState } from '../redux/slices/authSlice';
+import { resetOtpState } from '../redux/slices/authSlice/index';
+import { useRegisterMutation, useSendOtpMutation, useVerifyOtpMutation } from '../redux/api/authApi';
 import FontAwesome from 'react-native-vector-icons/FontAwesome';
 import { Colors } from '../constants/Colors';
 import { useRouter } from 'expo-router';
@@ -39,11 +40,16 @@ const Register = () => {
   const dispatch = useDispatch();
   const { 
     isAuthenticated, 
-    loading: reduxLoading, 
     otpSent, 
     otpVerified, 
-    otpLoading 
   } = useSelector((s) => s.auth);
+
+  const [sendOtpMutation, { isLoading: isSendingOtp }] = useSendOtpMutation();
+  const [verifyOtpMutation, { isLoading: isVerifyingOtp }] = useVerifyOtpMutation();
+  const [registerUserMutation, { isLoading: isRegistering }] = useRegisterMutation();
+
+  const reduxLoading = isRegistering;
+  const otpLoading = isSendingOtp || isVerifyingOtp;
 
   const { control, handleSubmit, formState: { errors }, reset } = useForm({
     defaultValues: { phone: '254' },
@@ -103,7 +109,7 @@ const Register = () => {
     setOtpModalVisible(true);
     
     try {
-      await dispatch(sendOtp({ username: savedFormData.phone })).unwrap();
+      await sendOtpMutation({ username: savedFormData.phone }).unwrap();
       toast.show('OTP sent to your phone number', { type: 'success' });
       setResendTimer(120); // 2 minutes timer
     } catch (error) {
@@ -204,10 +210,10 @@ const Register = () => {
 
     try {
       // Verify OTP first
-      await dispatch(verifyOtp({ 
+      await verifyOtpMutation({ 
         username: savedFormData.phone, 
         otp: otpValue 
-      })).unwrap();
+      }).unwrap();
 
       setOtpModalVisible(false);
       setLocalLoading(true);
@@ -222,7 +228,7 @@ const Register = () => {
       };
 
       // Attempt registration
-      const result = await dispatch(registerUser(credentials)).unwrap();
+      const result = await registerUserMutation(credentials).unwrap();
 
       // Inspect payload for DuplicateUserName-style response
       const dup = findDuplicateUsernameItem(result);
@@ -631,7 +637,7 @@ const Register = () => {
                   style={styles.resendButton}
                   onPress={async () => {
                     try {
-                      await dispatch(sendOtp({ username: savedFormData.phone })).unwrap();
+                      await sendOtpMutation({ username: savedFormData.phone }).unwrap();
                       toast.show('OTP resent to your phone number', { type: 'success' });
                       setResendTimer(120); // Reset 2 minutes timer
                     } catch (error) {

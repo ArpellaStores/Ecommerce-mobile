@@ -55,7 +55,7 @@ const baseQueryWithLogout = async (args, queryApi, extraOptions) => {
 export const api = createApi({
   baseQuery: baseQueryWithLogout,
   endpoints: () => ({}),
-  tagTypes: ["Products", "Categories"],
+  tagTypes: ["Products", "Categories", "Orders"],
   refetchOnMountOrArgChange: true,
   refetchOnFocus: true,
   refetchOnReconnect: true,
