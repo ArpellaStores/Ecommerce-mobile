@@ -24,6 +24,11 @@ import { clearCredentials, exitApp } from '../services/Auth'
 import { baseUrl } from '../constants/const'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import BottomNav from '../components/BottomNav'
+import { useGetOrdersQuery } from '../redux/api/ordersApi'
+import { useGetPagedProductsQuery } from '../redux/api/productsApi'
+import { setProducts } from '../redux/slices/productsSlice'
+
+
 
 const ProfilePage = () => {
   const router = useRouter()
@@ -41,10 +46,26 @@ const ProfilePage = () => {
     : 0
 
   const [autoEnabled, setAutoEnabled] = useState(true)
-  const [orders, setOrders] = useState([])
-  const [loadingOrders, setLoadingOrders] = useState(false)
+  const { data: rawOrders = [], isLoading: loadingOrders, error: ordersError } = useGetOrdersQuery(undefined, {
+    skip: !isAuthenticated,
+  })
+
+  // Proactive product fetch if cache is empty
+  const isProductsCacheEmpty = productsArray.length === 0
+  const { data: pageData, isLoading: loadingProducts } = useGetPagedProductsQuery({ pageNumber: 1, pageSize: 500 }, {
+    skip: !isAuthenticated || !isProductsCacheEmpty
+  })
+
+  useEffect(() => {
+    if (pageData?.items && isProductsCacheEmpty) {
+      dispatch(setProducts(pageData.items))
+    }
+  }, [pageData, dispatch, isProductsCacheEmpty])
+
+
   const [selectedOrder, setSelectedOrder] = useState(null)
   const [modalVisible, setModalVisible] = useState(false)
+
 
   const dims = useWindowDimensions()
   const isLandscape = dims.width > dims.height
@@ -61,28 +82,40 @@ const ProfilePage = () => {
     })()
   }, [])
 
-  useEffect(() => {
-    const fetchOrders = async () => {
-      setLoadingOrders(true)
-      try {
-        const { data } = await axios.get(`${baseUrl}/orders`)
-        if (!Array.isArray(data)) {
-          setOrders([])
-          return
-        }
-        const matchKey = String(user?.id ?? user?.phone ?? user?.phoneNumber ?? '')
-        const filtered = data.filter((o) => String(o.userId || o.user || '').trim() === matchKey.trim())
-        setOrders(filtered)
-      } catch (e) {
-        console.error('Fetch orders error', e)
-        setOrders([])
-      } finally {
-        setLoadingOrders(false)
-      }
+  const orders = useMemo(() => {
+    if (!isAuthenticated || !rawOrders) return []
+    const ident = String(user?.id ?? user?.phone ?? user?.phoneNumber ?? '').trim()
+    
+    // Debug logging to help identify why orders might be missing
+    console.log('[Profile] Identifying user as:', ident)
+    console.log('[Profile] Total raw orders from API:', rawOrders?.length)
+    if (rawOrders?.length > 0) {
+      console.log('[Profile] First raw order sample:', JSON.stringify(rawOrders[0], null, 2))
+    } else {
+      console.log('[Profile] rawOrders is currently empty or not an array:', typeof rawOrders, rawOrders)
     }
 
-    if (isAuthenticated) fetchOrders()
-  }, [user, isAuthenticated])
+    const filtered = rawOrders.filter((o) => {
+      const uid = String(o.userId || '').trim()
+      const phone = String(o.phoneNumber || o.phone || '').trim()
+      const userField = String(o.user || '').trim()
+      
+      const isMatch = 
+        (uid !== '' && uid !== 'N/A' && uid === ident) || 
+        (phone !== '' && phone === ident) ||
+        (userField !== '' && userField === ident) ||
+        (uid === 'N/A' && ident === '') // edge case for guest/N/A
+        
+      if (isMatch) console.log('[Profile] MATCH FOUND for order:', o.orderid || o.orderId)
+      return isMatch
+    })
+
+    
+    console.log('[Profile] Filtered orders count:', filtered.length)
+    return filtered
+  }, [rawOrders, user, isAuthenticated])
+
+
 
   const onToggleAuto = async (value) => {
     setAutoEnabled(value)
@@ -154,16 +187,29 @@ const ProfilePage = () => {
       {loadingOrders && (
         <View style={{ paddingVertical: 12 }}>
           <ActivityIndicator size="large" color="#4B2C20" />
+          <Text style={styles.centerText}>Loading your orders...</Text>
         </View>
       )}
-      {!loadingOrders && orders.length === 0 && <Text style={styles.centerText}>You have no past orders.</Text>}
+      {!loadingOrders && ordersError && (
+        <View style={styles.errorContainer}>
+          <Text style={styles.errorText}>Error loading orders: {ordersError?.data?.message || ordersError?.error || 'Unknown error'}</Text>
+          <Text style={styles.errorText}>Status: {ordersError?.status}</Text>
+        </View>
+      )}
+      {!loadingOrders && !ordersError && orders.length === 0 && (
+        <Text style={styles.centerText}>You have no past orders.</Text>
+      )}
+
     </View>
   )
 
   const openOrder = (order) => {
+    console.log('[Profile] Opening order details for:', order?.orderid || order?.orderId)
+    console.log('[Profile] Order items count:', getOrderItems(order).length)
     setSelectedOrder(order)
     setModalVisible(true)
   }
+
 
   const closeOrderModal = () => {
     setModalVisible(false)
@@ -191,8 +237,9 @@ const ProfilePage = () => {
 
   const getOrderItems = (order) => {
     if (!order) return []
-    return order.orderitem || order.orderItems || order.order_item || order.items || order.itemsOrdered || []
+    return order.orderitems || order.orderitem || order.orderItems || order.order_item || order.items || order.itemsOrdered || []
   }
+
 
   const computeUnitPrice = (item) => {
     const productFromOrder = item.product || null
@@ -208,6 +255,8 @@ const ProfilePage = () => {
     return unitPrice
   }
 
+
+
   const computeItemSubtotal = (item) => {
     const unitPrice = computeUnitPrice(item)
     const qty = Number(item.quantity || 0)
@@ -215,9 +264,11 @@ const ProfilePage = () => {
   }
 
   const computeOrderTotal = (order) => {
+    if (order?.total != null) return Number(order.total)
     const items = getOrderItems(order)
     return items.reduce((acc, it) => acc + computeItemSubtotal(it), 0)
   }
+
 
   const modalWidth = isLandscape ? Math.min(900, dims.width * 0.9) : Math.min(600, dims.width * 0.92)
   const modalMaxHeight = isLandscape ? dims.height * 0.9 : dims.height * 0.8
@@ -241,7 +292,12 @@ const ProfilePage = () => {
             </Text>
 
             <ScrollView contentContainerStyle={styles.modalContent}>
-              {selectedOrder ? (
+              {loadingProducts ? (
+                <View style={{ paddingVertical: 40, alignItems: 'center' }}>
+                  <ActivityIndicator size="large" color="#4B2C20" />
+                  <Text style={{ marginTop: 12, color: '#666', fontSize: 16 }}>Loading product dictionary...</Text>
+                </View>
+              ) : selectedOrder ? (
                 <>
                   <View style={styles.metaRow}>
                     <Text style={styles.metaLabel}>Status:</Text>
@@ -257,22 +313,32 @@ const ProfilePage = () => {
                         : '—'}
                     </Text>
                   </View>
+                  <View style={styles.metaRow}>
+                    <Text style={styles.metaLabel}>Coordinates:</Text>
+                    <Text style={styles.metaValue}>
+                      {selectedOrder.latitude?.toFixed(4)}, {selectedOrder.longitude?.toFixed(4)}
+                    </Text>
+                  </View>
 
                   <View style={{ height: 12 }} />
 
                   {getOrderItems(selectedOrder).length > 0 ? (
-                    getOrderItems(selectedOrder).map((item, i) => {
+                    getOrderItems(selectedOrder).map((item, j) => {
                       const productFromOrder = item.product || null
                       const productFromRedux = lookupProductFromRedux(item.productId)
+                      
                       const name =
-                        productFromOrder?.name || productFromRedux?.name || productFromOrder?.title || `Product ${item.productId || i + 1}`
+                        productFromOrder?.name || productFromRedux?.name || productFromOrder?.title || `Product ${item.productId || j + 1}`
+                      
                       const unitPrice = computeUnitPrice(item)
                       const qty = Number(item.quantity || 0)
                       const subtotal = unitPrice * qty
+                      
                       const imageUri = productFromRedux?.productImage || productFromOrder?.imageUrl || productFromOrder?.productImage || null
 
+
                       return (
-                        <View key={String(i)} style={styles.itemRowModal}>
+                        <View key={String(j)} style={styles.itemRowModal}>
                           <View style={styles.itemImageWrapper}>
                             {imageUri ? <Image source={{ uri: imageUri }} style={styles.itemImageModal} /> : <View style={styles.placeholderImageModal}><Text style={{ color: '#666', fontSize: 12 }}>No image</Text></View>}
                           </View>
@@ -363,9 +429,20 @@ const styles = StyleSheet.create({
   metaLabel: { color: '#757575' },
   metaValue: { fontWeight: '600' },
 
-  modalFooter: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: 8 },
-  closeBtn: { backgroundColor: '#4B2C20', padding: 10, borderRadius: 6, alignItems: 'center' },
-  closeText: { color: '#fff', fontWeight: '600' },
+  errorContainer: {
+    backgroundColor: '#ffebee',
+    padding: 12,
+    borderRadius: 8,
+    marginVertical: 10,
+    borderWidth: 1,
+    borderColor: '#f44336',
+  },
+  errorText: {
+    color: '#d32f2f',
+    textAlign: 'center',
+    fontSize: 14,
+  },
 })
+
 
 export default ProfilePage

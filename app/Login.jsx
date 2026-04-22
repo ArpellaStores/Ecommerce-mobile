@@ -255,8 +255,13 @@ const Login = () => {
           render={({ field: { onChange, onBlur, value }, fieldState: { error } }) => {
             const handlePhoneChange = (text) => {
               let cleaned = (text || '').replace(/\D/g, '');
+              // We always store the 254 prefix internally
               if (!cleaned.startsWith('254')) {
                 cleaned = '254' + cleaned.replace(/^254/, '').replace(/^0+/, '');
+              }
+              // Limit to 12 digits (254 + 9 digits)
+              if (cleaned.length > 12) {
+                cleaned = cleaned.slice(0, 12);
               }
               onChange(cleaned);
             };
@@ -264,19 +269,25 @@ const Login = () => {
             return (
               <View style={styles.inputGroup}>
                 <Text style={styles.inputLabel}>Phone Number</Text>
-                <TextInput
-                  style={[styles.input, error && styles.inputError]}
-                  placeholder="254712345678"
-                  keyboardType="numeric"
-                  onBlur={onBlur}
-                  onChangeText={handlePhoneChange}
-                  value={value || '254'}
-                  maxLength={12}
-                  editable={!isProcessing}
-                />
+                <View style={[styles.phoneInputContainer, error && styles.inputError]}>
+                  <View style={styles.phonePrefix}>
+                    <Text style={styles.phonePrefixText}>254</Text>
+                  </View>
+                  <TextInput
+                    style={styles.phoneInputBox}
+                    placeholder="7XXXXXXXX"
+                    keyboardType="numeric"
+                    onBlur={onBlur}
+                    onChangeText={handlePhoneChange}
+                    value={(value || '254').replace(/^254/, '')}
+                    maxLength={9}
+                    editable={!isProcessing}
+                  />
+                </View>
                 {error && <Text style={styles.errorText}>{error.message}</Text>}
               </View>
             );
+
           }}
         />
 
@@ -575,6 +586,37 @@ const styles = StyleSheet.create({
     marginTop: 6,
     fontSize: 13,
   },
+  phoneInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fafafa',
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 8,
+    overflow: 'hidden',
+    height: 48,
+  },
+  phonePrefix: {
+    backgroundColor: '#eee',
+    paddingHorizontal: 12,
+    height: '100%',
+    justifyContent: 'center',
+    borderRightWidth: 1,
+    borderRightColor: '#ddd',
+  },
+  phonePrefixText: {
+    fontWeight: 'bold',
+    color: '#4B2C20',
+    fontSize: 16,
+  },
+  phoneInputBox: {
+    flex: 1,
+    height: '100%',
+    paddingHorizontal: 12,
+    fontSize: 16,
+    color: '#000',
+  },
 });
+
 
 export default Login;

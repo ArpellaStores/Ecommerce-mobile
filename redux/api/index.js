@@ -21,13 +21,27 @@ const baseQuery = fetchBaseQuery({
 
 const baseQueryWithLogout = async (args, queryApi, extraOptions) => {
   const url = typeof args === "string" ? args : args.url;
-  const method = typeof args === "string" ? "GET" : args.method || "GET";
-  const body = args.body;
   
+  const state = queryApi.getState();
+  const isAuthenticated = state.auth?.isAuthenticated;
+  const token = state.auth?.token;
+
+  const isPublicAuthEndpoint = url?.includes("login") || url?.includes("otp") || url?.includes("register");
+
+  if (isAuthenticated && !token && !isPublicAuthEndpoint) {
+    console.warn("[API] Auth state conflict: authenticated but no token. Forcing logout.");
+    queryApi.dispatch(api.util.resetApiState());
+    queryApi.dispatch(setSignOut());
+    return {
+      error: {
+        status: 'CUSTOM_ERROR',
+        error: 'Missing authentication token while logged in.',
+        data: { message: 'Authentication required' }
+      }
+    };
+  }
+
   const result = await baseQuery(args, queryApi, extraOptions);
-
-  
-
 
   if (result?.error?.status === 401 && !url?.includes("login")) {
     queryApi.dispatch(api.util.resetApiState());
@@ -36,6 +50,7 @@ const baseQueryWithLogout = async (args, queryApi, extraOptions) => {
 
   return result;
 };
+
 
 export const api = createApi({
   baseQuery: baseQueryWithLogout,

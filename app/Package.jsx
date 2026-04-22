@@ -16,7 +16,10 @@ import { useRouter } from 'expo-router'
 import axios from 'axios'
 import { baseUrl } from '../constants/const'
 import { toast } from 'react-native-toast-notifications'
-import { useSelector } from 'react-redux'
+import { useSelector, useDispatch } from 'react-redux'
+import { useGetPagedProductsQuery } from '../redux/api/productsApi'
+import { setProducts } from '../redux/slices/productsSlice'
+
 import BottomNav from '../components/BottomNav'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 
@@ -37,8 +40,9 @@ const THEME_COLORS = {
 
 const getOrderItems = (order) => {
   if (!order) return []
-  return order.orderitem || order.orderItems || order.order_item || order.items || order.itemsOrdered || []
+  return order.orderitems || order.orderitem || order.orderItems || order.order_item || order.items || order.itemsOrdered || []
 }
+
 
 const computeUnitPriceForItem = (item, productFromRedux) => {
   const productFromOrder = item.product || null
@@ -120,7 +124,7 @@ const StatusProgressTracker = ({ status }) => {
   )
 }
 
-const OrderDetailModal = ({ visible, order, onClose, lookupProductFromRedux }) => {
+const OrderDetailModal = ({ visible, order, onClose, lookupProductFromRedux, loadingProducts }) => {
   if (!order) return null
 
   const items = getOrderItems(order)
@@ -128,7 +132,9 @@ const OrderDetailModal = ({ visible, order, onClose, lookupProductFromRedux }) =
   return (
     <Modal animationType="slide" transparent visible={visible} onRequestClose={onClose}>
       <View style={styles.modalOverlay}>
+        <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={onClose} />
         <View style={styles.modalContent}>
+
           <TouchableOpacity style={styles.closeButton} onPress={onClose}>
             <Icon name="times" size={20} color="#000" />
           </TouchableOpacity>
@@ -140,7 +146,12 @@ const OrderDetailModal = ({ visible, order, onClose, lookupProductFromRedux }) =
           <View style={{ height: 12 }} />
 
           <ScrollView style={{ maxHeight: 420 }} showsVerticalScrollIndicator={true}>
-            {items && items.length > 0 ? (
+            {loadingProducts ? (
+              <View style={{ paddingVertical: 40, alignItems: 'center' }}>
+                <ActivityIndicator size="large" color={THEME_COLORS.primary} />
+                <Text style={{ marginTop: 12, color: '#666', fontSize: 16 }}>Loading product dictionary...</Text>
+              </View>
+            ) : items && items.length > 0 ? (
               <>
                 {items.map((item, i) => {
                   const productFromOrder = item.product || null
@@ -153,7 +164,7 @@ const OrderDetailModal = ({ visible, order, onClose, lookupProductFromRedux }) =
                   const unitPrice = computeUnitPriceForItem(item, productFromRedux)
                   const qty = Number(item.quantity || 0)
                   const subtotal = unitPrice * qty
-                  const imageUri = productFromRedux?.productImage || productFromOrder?.imageUrl || productFromOrder?.productImage || null
+                  const imageUri = productFromRedux?.imageUrl || productFromRedux?.image || productFromOrder?.imageUrl || productFromOrder?.productImage || null
 
                   return (
                     <View key={String(i)} style={styles.modalRow}>
@@ -208,12 +219,16 @@ const OrderDetailModal = ({ visible, order, onClose, lookupProductFromRedux }) =
             )}
           </ScrollView>
 
-          <View style={{ marginTop: 12, flexDirection: 'row', justifyContent: 'flex-end' }}>
-            <TouchableOpacity style={styles.modalCloseBtn} onPress={onClose}>
-              <Text style={{ color: '#fff', fontWeight: '700' }}>Close</Text>
+          <View style={{ marginTop: 20, marginBottom: 8 }}>
+            <TouchableOpacity 
+              style={[styles.modalCloseBtn, { width: '100%', alignItems: 'center', paddingVertical: 14 }]} 
+              onPress={onClose}
+            >
+              <Text style={{ color: '#fff', fontWeight: '700', fontSize: 16 }}>Close Details</Text>
             </TouchableOpacity>
           </View>
         </View>
+
       </View>
     </Modal>
   )
@@ -280,6 +295,8 @@ const BackdropLoader = () => (
 const Package = () => {
   const router = useRouter()
   const insets = useSafeAreaInsets()
+  const dispatch = useDispatch()
+
 
   const [orders, setOrders] = useState([])
   const [loading, setLoading] = useState(true)
@@ -317,7 +334,20 @@ const Package = () => {
     }
   }, [productsById, productsArray])
 
+  // Proactive product fetch if cache is empty
+  const isProductsCacheEmpty = productsArray.length === 0
+  const { data: pageData, isLoading: loadingProducts } = useGetPagedProductsQuery({ pageNumber: 1, pageSize: 500 }, {
+    skip: !user || !isProductsCacheEmpty
+  })
+
   useEffect(() => {
+    if (pageData?.items && isProductsCacheEmpty) {
+      dispatch(setProducts(pageData.items))
+    }
+  }, [pageData, dispatch, isProductsCacheEmpty])
+
+  useEffect(() => {
+
     const fetchOrders = async () => {
       try {
         setLoading(true)
@@ -390,7 +420,7 @@ const Package = () => {
         />
       )}
 
-      <OrderDetailModal visible={modalVisible} order={selectedOrder} onClose={closeModal} lookupProductFromRedux={lookupProductFromRedux} />
+      <OrderDetailModal visible={modalVisible} order={selectedOrder} onClose={closeModal} lookupProductFromRedux={lookupProductFromRedux} loadingProducts={loadingProducts} />
 
       <BottomNav activeRoute="Package" cartCount={cartCount} />
     </View>
