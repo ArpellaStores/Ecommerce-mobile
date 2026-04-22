@@ -1,15 +1,14 @@
-name: EAS Build -> Artifact & Release
+name: EAS Build -> Play Store
 
 on:
   push:
     branches: ["main"]
 
 permissions:
-  contents: write
-  id-token: write
+  contents: read
 
 jobs:
-  build-and-publish:
+  build-and-submit:
     runs-on: ubuntu-latest
     timeout-minutes: 120
 
@@ -38,116 +37,12 @@ jobs:
             exit 1
           fi
 
-      - name: Ensure eas-cli available
-        run: |
-          set -euo pipefail
-          if ! command -v npx >/dev/null 2>&1; then
-            echo "ERROR: npx is not available."
-            exit 1
-          fi
-          if ! npx --no-install eas --version >/dev/null 2>&1; then
-            npm install -g eas-cli@latest
-          fi
-          eas --version
+      - name: Install EAS CLI
+        run: npm install -g eas-cli@latest
 
-      - name: Start EAS build and wait
-        id: eas_build
+      - name: Build Android and auto-submit to Play Console
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-        shell: bash
         run: |
           set -euo pipefail
-
-          if [ -n "$(git status --porcelain)" ]; then
-            echo "ERROR: Git working tree is dirty. Commit or stash changes and retry."
-            git status --porcelain
-            exit 1
-          fi
-
-          if ! command -v jq >/dev/null 2>&1; then
-            sudo apt-get update
-            sudo apt-get install -y jq
-          fi
-
-          TMP_OUTPUT="/tmp/eas-build-output.json"
-          rm -f "$TMP_OUTPUT"
-
-          npx eas build --platform android --profile preview --non-interactive --wait --json > "$TMP_OUTPUT"
-
-          if [ ! -s "$TMP_OUTPUT" ]; then
-            echo "ERROR: EAS CLI produced no output."
-            exit 1
-          fi
-
-          # EAS CLI returns an array when using --json, so we need to access the first element
-          BUILD_ID=$(jq -r '.[0].id // empty' "$TMP_OUTPUT")
-          ARTIFACT_URL=$(jq -r '.[0].artifacts.buildUrl // empty' "$TMP_OUTPUT")
-
-          if [ -z "$BUILD_ID" ]; then
-            echo "ERROR: Could not determine EAS build id."
-            cat "$TMP_OUTPUT"
-            exit 1
-          fi
-
-          if [ -z "$ARTIFACT_URL" ]; then
-            echo "ERROR: No artifact URL found in EAS build output."
-            cat "$TMP_OUTPUT"
-            exit 1
-          fi
-
-          echo "build_id=$BUILD_ID" >> "$GITHUB_OUTPUT"
-          echo "artifact_url=$ARTIFACT_URL" >> "$GITHUB_OUTPUT"
-
-      - name: Download APK
-        id: download_apk
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          ART_URL="${{ steps.eas_build.outputs.artifact_url }}"
-          if [ -z "$ART_URL" ]; then
-            echo "ERROR: artifact_url output is empty."
-            exit 1
-          fi
-
-          # Download the APK directly
-          APK_FILE="app-android.apk"
-          curl -L --fail --retry 5 --retry-delay 2 -o "$APK_FILE" "$ART_URL"
-
-          if [ ! -s "$APK_FILE" ]; then
-            echo "ERROR: Downloaded artifact is empty."
-            exit 1
-          fi
-
-          echo "apk_file=$APK_FILE" >> "$GITHUB_OUTPUT"
-          ls -lh "$APK_FILE"
-
-      - name: Upload artifact to Actions
-        uses: actions/upload-artifact@v4
-        with:
-          name: android-build
-          path: ${{ steps.download_apk.outputs.apk_file }}
-
-      - name: Create GitHub release with download link
-        id: release
-        uses: ncipollo/release-action@v1
-        with:
-          tag: "eas-build-${{ steps.eas_build.outputs.build_id }}"
-          name: "EAS Build ${{ steps.eas_build.outputs.build_id }}"
-          body: |
-            Auto build from ${{ github.actor }} @ ${{ github.sha }}
-            EAS Build ID: ${{ steps.eas_build.outputs.build_id }}
-            
-            📱 **Download APK:** ${{ steps.eas_build.outputs.artifact_url }}
-          draft: false
-          prerelease: true
-          artifacts: ${{ steps.download_apk.outputs.apk_file }}
-
-      - name: Output release URL
-        shell: bash
-        run: |
-          set -euo pipefail
-          TAG="eas-build-${{ steps.eas_build.outputs.build_id }}"
-          echo "release_tag=$TAG" >> "$GITHUB_OUTPUT"
-          echo "release_url=https://github.com/${{ github.repository }}/releases/tag/${TAG}"
-          echo "Release created: https://github.com/${{ github.repository }}/releases/tag/${TAG}"
+          eas build --platform android --profile production --non-interactive --wait --auto-submit
