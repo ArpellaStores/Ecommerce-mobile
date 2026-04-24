@@ -27,6 +27,8 @@ import BottomNav from '../components/BottomNav'
 import { useGetOrdersQuery } from '../redux/api/ordersApi'
 import { useGetPagedProductsQuery } from '../redux/api/productsApi'
 import { setProducts } from '../redux/slices/productsSlice'
+import pkg from '../package.json'
+import ProductImage from '../components/ProductImage'
 
 
 
@@ -46,8 +48,9 @@ const ProfilePage = () => {
     : 0
 
   const [autoEnabled, setAutoEnabled] = useState(true)
-  const { data: rawOrders = [], isLoading: loadingOrders, error: ordersError } = useGetOrdersQuery(undefined, {
-    skip: !isAuthenticated,
+  const username = String(user?.phone ?? user?.phoneNumber ?? user?.id ?? '').trim()
+  const { data: rawOrders = [], isLoading: loadingOrders, error: ordersError } = useGetOrdersQuery(username, {
+    skip: !isAuthenticated || !username,
   })
 
   // Proactive product fetch if cache is empty
@@ -65,8 +68,7 @@ const ProfilePage = () => {
 
   const [selectedOrder, setSelectedOrder] = useState(null)
   const [modalVisible, setModalVisible] = useState(false)
-
-
+  const [orderHistoryModalVisible, setOrderHistoryModalVisible] = useState(false)
   const dims = useWindowDimensions()
   const isLandscape = dims.width > dims.height
   const insets = useSafeAreaInsets()
@@ -84,36 +86,8 @@ const ProfilePage = () => {
 
   const orders = useMemo(() => {
     if (!isAuthenticated || !rawOrders) return []
-    const ident = String(user?.id ?? user?.phone ?? user?.phoneNumber ?? '').trim()
-    
-    // Debug logging to help identify why orders might be missing
-    console.log('[Profile] Identifying user as:', ident)
-    console.log('[Profile] Total raw orders from API:', rawOrders?.length)
-    if (rawOrders?.length > 0) {
-      console.log('[Profile] First raw order sample:', JSON.stringify(rawOrders[0], null, 2))
-    } else {
-      console.log('[Profile] rawOrders is currently empty or not an array:', typeof rawOrders, rawOrders)
-    }
-
-    const filtered = rawOrders.filter((o) => {
-      const uid = String(o.userId || '').trim()
-      const phone = String(o.phoneNumber || o.phone || '').trim()
-      const userField = String(o.user || '').trim()
-      
-      const isMatch = 
-        (uid !== '' && uid !== 'N/A' && uid === ident) || 
-        (phone !== '' && phone === ident) ||
-        (userField !== '' && userField === ident) ||
-        (uid === 'N/A' && ident === '') // edge case for guest/N/A
-        
-      if (isMatch) console.log('[Profile] MATCH FOUND for order:', o.orderid || o.orderId)
-      return isMatch
-    })
-
-    
-    console.log('[Profile] Filtered orders count:', filtered.length)
-    return filtered
-  }, [rawOrders, user, isAuthenticated])
+    return rawOrders
+  }, [rawOrders, isAuthenticated])
 
 
 
@@ -155,57 +129,7 @@ const ProfilePage = () => {
     }
   }, [productsById, productsArray])
 
-  const renderHeader = () => (
-    <View style={styles.headerContainer}>
-      <Text style={styles.header}>Personal Details</Text>
-      {isAuthenticated ? (
-        <>
-          {['firstName', 'lastName', 'email', 'phone'].map((field) => (
-            <View key={field} style={styles.row}>
-              <Text style={styles.label}>
-                {field === 'phone' ? 'Phone:' : field === 'email' ? 'Email:' : `${field.replace(/Name/, ' Name')}:`}
-              </Text>
-              <View style={styles.valueRow}>
-                <Text style={styles.valueText}>{user?.[field] ?? 'N/A'}</Text>
-              </View>
-            </View>
-          ))}
-          <View style={styles.row}>
-            <Text style={styles.label}>Enable Auto-login:</Text>
-            <Switch value={autoEnabled} onValueChange={onToggleAuto} />
-          </View>
-        </>
-      ) : (
-        <Text style={styles.centerText}>No user data. Please log in.</Text>
-      )}
-
-      <TouchableOpacity style={styles.logoutBtn} onPress={onLogout}>
-        <Text style={styles.logoutText}>Logout & Exit</Text>
-      </TouchableOpacity>
-
-      <Text style={styles.sectionHeader}>Order History</Text>
-      {loadingOrders && (
-        <View style={{ paddingVertical: 12 }}>
-          <ActivityIndicator size="large" color="#4B2C20" />
-          <Text style={styles.centerText}>Loading your orders...</Text>
-        </View>
-      )}
-      {!loadingOrders && ordersError && (
-        <View style={styles.errorContainer}>
-          <Text style={styles.errorText}>Error loading orders: {ordersError?.data?.message || ordersError?.error || 'Unknown error'}</Text>
-          <Text style={styles.errorText}>Status: {ordersError?.status}</Text>
-        </View>
-      )}
-      {!loadingOrders && !ordersError && orders.length === 0 && (
-        <Text style={styles.centerText}>You have no past orders.</Text>
-      )}
-
-    </View>
-  )
-
   const openOrder = (order) => {
-    console.log('[Profile] Opening order details for:', order?.orderid || order?.orderId)
-    console.log('[Profile] Order items count:', getOrderItems(order).length)
     setSelectedOrder(order)
     setModalVisible(true)
   }
@@ -275,14 +199,83 @@ const ProfilePage = () => {
 
   return (
     <SafeAreaView style={[styles.safe, { paddingBottom: Math.max(insets.bottom, 12) }]}>
-      <FlatList
-        data={orders}
-        keyExtractor={(item) => String(item?.orderid || item?.orderId || item?._id || Math.random())}
-        renderItem={renderOrderItem}
-        contentContainerStyle={[styles.listContainer, { paddingBottom: 120 }]}
-        ListHeaderComponent={renderHeader}
-        removeClippedSubviews={true}
-      />
+      <ScrollView contentContainerStyle={[styles.listContainer, { paddingBottom: 120 }]}>
+        <View style={styles.headerContainer}>
+          <Text style={styles.header}>Personal Details</Text>
+          {isAuthenticated ? (
+            <>
+              {['firstName', 'lastName', 'email', 'phone'].map((field) => (
+                <View key={field} style={styles.row}>
+                  <Text style={styles.label}>
+                    {field === 'phone' ? 'Phone:' : field === 'email' ? 'Email:' : `${field.replace(/Name/, ' Name')}:`}
+                  </Text>
+                  <View style={styles.valueRow}>
+                    <Text style={styles.valueText}>{user?.[field] ?? 'N/A'}</Text>
+                  </View>
+                </View>
+              ))}
+              <View style={styles.row}>
+                <Text style={styles.label}>Enable Auto-login:</Text>
+                <Switch value={autoEnabled} onValueChange={onToggleAuto} />
+              </View>
+            </>
+          ) : (
+            <Text style={styles.centerText}>No user data. Please log in.</Text>
+          )}
+
+          <TouchableOpacity style={styles.logoutBtn} onPress={onLogout}>
+            <Text style={styles.logoutText}>Logout & Exit</Text>
+          </TouchableOpacity>
+
+          <Text style={styles.sectionHeader}>Order History</Text>
+          <TouchableOpacity 
+            style={styles.historyBtn} 
+            onPress={() => setOrderHistoryModalVisible(true)}
+          >
+            <Text style={styles.historyBtnText}>View Order History</Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.versionContainer}>
+          <Text style={styles.versionText}>App Version {pkg.version}</Text>
+        </View>
+      </ScrollView>
+
+      {/* Order History Modal */}
+      <Modal visible={orderHistoryModalVisible} transparent animationType="slide" supportedOrientations={['portrait', 'landscape']} onRequestClose={() => setOrderHistoryModalVisible(false)}>
+        <View style={[styles.modalOverlay, { zIndex: 9990, elevation: 20 }]}>
+          <View style={[styles.modalBox, { width: modalWidth, maxHeight: modalMaxHeight, elevation: 30, zIndex: 10000 }]}>
+            <Text style={styles.modalTitle}>Order History</Text>
+            {loadingOrders && (
+              <View style={{ paddingVertical: 12 }}>
+                <ActivityIndicator size="large" color="#4B2C20" />
+                <Text style={styles.centerText}>Loading your orders...</Text>
+              </View>
+            )}
+            {!loadingOrders && ordersError && (
+              <View style={styles.errorContainer}>
+                <Text style={styles.errorText}>Error loading orders: {ordersError?.data?.message || ordersError?.error || 'Unknown error'}</Text>
+              </View>
+            )}
+            {!loadingOrders && !ordersError && orders.length === 0 && (
+              <Text style={styles.centerText}>You have no past orders.</Text>
+            )}
+            {!loadingOrders && !ordersError && orders.length > 0 && (
+              <FlatList
+                data={orders}
+                keyExtractor={(item) => String(item?.orderid || item?.orderId || item?._id || Math.random())}
+                renderItem={renderOrderItem}
+                contentContainerStyle={{ paddingBottom: 20 }}
+              />
+            )}
+            <View style={styles.modalFooter}>
+              <TouchableOpacity style={styles.closeBtn} onPress={() => setOrderHistoryModalVisible(false)}>
+                <Text style={styles.closeText}>Close</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       <Modal visible={modalVisible} transparent animationType="slide" supportedOrientations={['portrait', 'landscape']} onRequestClose={closeOrderModal}>
         <View style={[styles.modalOverlay, { zIndex: 9999, elevation: 20 }]}>
@@ -313,12 +306,6 @@ const ProfilePage = () => {
                         : '—'}
                     </Text>
                   </View>
-                  <View style={styles.metaRow}>
-                    <Text style={styles.metaLabel}>Coordinates:</Text>
-                    <Text style={styles.metaValue}>
-                      {selectedOrder.latitude?.toFixed(4)}, {selectedOrder.longitude?.toFixed(4)}
-                    </Text>
-                  </View>
 
                   <View style={{ height: 12 }} />
 
@@ -333,14 +320,11 @@ const ProfilePage = () => {
                       const unitPrice = computeUnitPrice(item)
                       const qty = Number(item.quantity || 0)
                       const subtotal = unitPrice * qty
-                      
-                      const imageUri = productFromRedux?.productImage || productFromOrder?.imageUrl || productFromOrder?.productImage || null
-
 
                       return (
                         <View key={String(j)} style={styles.itemRowModal}>
                           <View style={styles.itemImageWrapper}>
-                            {imageUri ? <Image source={{ uri: imageUri }} style={styles.itemImageModal} /> : <View style={styles.placeholderImageModal}><Text style={{ color: '#666', fontSize: 12 }}>No image</Text></View>}
+                            <ProductImage product={productFromRedux || productFromOrder || { id: item.productId }} style={styles.itemImageModal} />
                           </View>
 
                           <View style={styles.itemMetaWrapper}>
@@ -442,6 +426,13 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     fontSize: 14,
   },
+  historyBtn: { backgroundColor: '#4B2C20', padding: 12, borderRadius: 8, alignItems: 'center', marginVertical: 12 },
+  historyBtnText: { color: '#fff', fontWeight: 'bold', fontSize: 16 },
+  versionContainer: { alignItems: 'center', marginTop: 40, marginBottom: 20 },
+  versionText: { color: '#888', fontSize: 14, fontStyle: 'italic' },
+  modalFooter: { marginTop: 12, alignItems: 'center' },
+  closeBtn: { backgroundColor: '#ddd', paddingVertical: 10, paddingHorizontal: 20, borderRadius: 8 },
+  closeText: { fontWeight: 'bold', color: '#333' },
 })
 
 

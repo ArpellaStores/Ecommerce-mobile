@@ -1,50 +1,72 @@
-# Welcome to your Expo app 👋
+# Arpella Ecommerce Mobile
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+Welcome to the **Arpella Ecommerce Mobile** project! This is a robust, cross-platform mobile application built using [Expo](https://expo.dev/) and React Native, tailored for the Arpella Stores e-commerce ecosystem.
 
-## Get started
+## 🛠 Tech Stack
 
-1. Install dependencies
+- **Framework**: [Expo](https://expo.dev) / [React Native](https://reactnative.dev)
+- **Routing**: [Expo Router](https://docs.expo.dev/router/introduction/) (File-based routing)
+- **State Management**: [Redux Toolkit](https://redux-toolkit.js.org/) & [RTK Query](https://redux-toolkit.js.org/rtk-query/overview)
+- **Form Handling**: [React Hook Form](https://react-hook-form.com/)
+- **Storage**: [AsyncStorage](https://react-native-async-storage.github.io/async-storage/) & [Expo SecureStore](https://docs.expo.dev/versions/latest/sdk/securestore/)
+- **UI Icons**: React Native Vector Icons / FontAwesome
 
+## 📋 Prerequisites
+
+Before you begin, ensure you have the following installed:
+- [Node.js](https://nodejs.org/) (v18 or newer recommended)
+- `npm` or `yarn`
+- [Expo CLI](https://docs.expo.dev/workflow/expo-cli/)
+- **Expo Go** app installed on your physical device, or a configured Android Emulator / iOS Simulator.
+
+## 🚀 Installation & Setup
+
+1. **Clone the repository:**
+   ```bash
+   git clone <repository-url>
+   cd Arpella-Ecommerce-mobile
+   ```
+
+2. **Install dependencies:**
    ```bash
    npm install
    ```
 
-2. Start the app
-
+3. **Start the development server:**
    ```bash
-    npx expo start
+   npm run start
+   # or
+   npx expo start --dev-client
    ```
 
-In the output, you'll find options to open the app in a
+4. **Run on a device/emulator:**
+   - Scan the QR code in the terminal using the **Expo Go** app on your phone.
+   - Press `i` to open in the iOS simulator.
+   - Press `a` to open in the Android emulator.
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+## 🏗 Project Workflow & Architecture
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
+- **File-Based Routing (`/app`)**: Screens are automatically routed based on their file path within the `app/` directory. Core screens include `Home.jsx`, `Login.jsx`, `Profile.jsx`, and `Package.jsx`.
+- **State & Data Fetching (`/redux`)**: 
+  - **Slices**: Local state (like auth, cart, products) is managed in `redux/slices/`.
+  - **APIs (RTK Query)**: Network requests are centrally managed in `redux/api/` (e.g., `ordersApi.js`, `productsApi.js`, `authApi.js`). This provides automatic caching, background fetching, and polling out of the box.
+- **Component Design (`/components`)**: Reusable UI components (like `ProductImage`, `BottomNav`) are kept in the `components/` directory to maintain DRY principles.
+- **Authentication Flow**: Managed via JWT tokens and OTP verification. User sessions are persisted locally using `expo-secure-store` and `redux-persist`.
 
-## Get a fresh project
+## 📦 Building for Production
 
-When you're ready, run:
+When you are ready to create a standalone build for iOS or Android, you can use Expo Application Services (EAS):
 
 ```bash
-npm run reset-project
+# For Android
+npm run android
+
+# For iOS
+npm run ios
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+For detailed guides on EAS builds, check the [Expo Development Builds documentation](https://docs.expo.dev/develop/development-builds/introduction/).
 
-## Learn more
-
-To learn more about developing your project with Expo, look at the following resources:
-
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
-
-## Join the community
-
-Join our community of developers creating universal apps.
-
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+## 🤝 Support & Community
+- [Expo Documentation](https://docs.expo.dev/)
+- [React Native Documentation](https://reactnative.dev/docs/getting-started)

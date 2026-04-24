@@ -419,50 +419,42 @@ const Register = () => {
                     message: 'Phone must start with 254 followed by 9 digits (e.g., 254712345678)',
                   },
                 }}
-                render={({ field: { onChange, value } }) => {
-                  // Normalization/cleaning & enforced prefix rules:
+                render={({ field: { onChange, onBlur, value }, fieldState: { error } }) => {
                   const handlePhoneChange = (text) => {
-                    if (typeof text !== 'string') text = String(text || '');
-                    // Remove non-digits
-                    let cleaned = text.replace(/\D/g, '');
-
-                    // If user types a local 0-prefixed number (e.g., 0712345678) => convert to 254712345678
-                    if (cleaned.startsWith('0')) {
-                      cleaned = '254' + cleaned.slice(1);
+                    let cleaned = (text || '').replace(/\D/g, '');
+                    // We always store the 254 prefix internally
+                    if (!cleaned.startsWith('254')) {
+                      cleaned = '254' + cleaned.replace(/^254/, '').replace(/^0+/, '');
                     }
-
-                    // If user types a local number starting with '7' (e.g., 712345678) => prefix with 254
-                    if (!cleaned.startsWith('254') && cleaned.startsWith('7')) {
-                      cleaned = '254' + cleaned;
-                    }
-
-                    // If user typed '254' and then 0 after the country code (e.g., 2540712...) => remove that zero
-                    if (cleaned.startsWith('2540')) {
-                      cleaned = '254' + cleaned.slice(4);
-                    }
-
-                    // Ensure maximum length of 12 digits (254 + 9 digits)
+                    // Limit to 12 digits (254 + 9 digits)
                     if (cleaned.length > 12) {
                       cleaned = cleaned.slice(0, 12);
                     }
-
                     onChange(cleaned);
                   };
 
                   return (
-                    <TextInput
-                      style={styles.input}
-                      placeholder="254712345678"
-                      keyboardType="phone-pad"
-                      value={value || '254'}
-                      onChangeText={handlePhoneChange}
-                      editable={!combinedLoading}
-                      maxLength={12}
-                    />
+                    <>
+                      <View style={[styles.phoneInputContainer, error && styles.inputError]}>
+                        <View style={styles.phonePrefix}>
+                          <Text style={styles.phonePrefixText}>254</Text>
+                        </View>
+                        <TextInput
+                          style={styles.phoneInputBox}
+                          placeholder="7XXXXXXXX"
+                          keyboardType="numeric"
+                          onBlur={onBlur}
+                          onChangeText={handlePhoneChange}
+                          value={(value || '254').replace(/^254/, '')}
+                          maxLength={9}
+                          editable={!combinedLoading}
+                        />
+                      </View>
+                      {error && <Text style={styles.error}>{error.message}</Text>}
+                    </>
                   );
                 }}
               />
-              {errors.phone && <Text style={styles.error}>{errors.phone.message}</Text>}
             </View>
 
             {/* Password */}
@@ -707,14 +699,51 @@ const styles = StyleSheet.create({
   input: {
     height: 40, borderColor: '#ccc', borderWidth: 1,
     borderRadius: 8, paddingHorizontal: 10, backgroundColor: '#ffe',
+    color: '#000',
   },
   passwordRow: {
     flexDirection: 'row', alignItems: 'center',
     borderColor: '#ccc', borderWidth: 1, borderRadius: 8, backgroundColor: '#ffe',
   },
-  passwordInput: { flex: 1, height: 40, paddingHorizontal: 10, backgroundColor: '#ffe' },
+  passwordInput: { flex: 1, height: 40, paddingHorizontal: 10, backgroundColor: '#ffe', color: '#000' },
   eyeButton: { padding: 10 },
   error: { color: 'red', fontSize: 12 },
+  phoneInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#ffe',
+    borderWidth: 1,
+    borderColor: '#ccc',
+    borderRadius: 8,
+    overflow: 'hidden',
+    height: 40,
+    marginTop: 4,
+  },
+  phonePrefix: {
+    backgroundColor: '#eee',
+    paddingHorizontal: 12,
+    height: '100%',
+    justifyContent: 'center',
+    borderRightWidth: 1,
+    borderRightColor: '#ccc',
+  },
+  phonePrefixText: {
+    fontWeight: 'bold',
+    color: '#4B2C20',
+    fontSize: 16,
+  },
+  phoneInputBox: {
+    flex: 1,
+    height: '100%',
+    paddingHorizontal: 12,
+    fontSize: 16,
+    color: '#000',
+    backgroundColor: '#ffe',
+  },
+  inputError: {
+    borderColor: 'red',
+    borderWidth: 1.5,
+  },
   button: {
     backgroundColor: '#4B2C20', padding: 12,
     borderRadius: 8, alignItems: 'center', marginBottom: 12,

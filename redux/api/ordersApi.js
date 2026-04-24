@@ -28,10 +28,9 @@ import { api } from "./index";
 export const ordersApi = api.injectEndpoints({
   endpoints: (builder) => ({
     getOrders: builder.query({
-      query: () => "/orders?platform=mobile",
+      query: (username) => `/orders/${username}?platform=mobile`,
       providesTags: ["Orders"],
       transformResponse: (response) => {
-        console.log(response)
         if (Array.isArray(response)) return response;
         if (response?.items && Array.isArray(response.items)) return response.items;
         if (response?.data && Array.isArray(response.data)) return response.data;

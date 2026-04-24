@@ -464,6 +464,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     backgroundColor: '#fafafa',
     fontSize: 16,
+    color: '#000',
   },
   inputError: {
     borderColor: 'red',
@@ -483,6 +484,7 @@ const styles = StyleSheet.create({
     height: 48,
     paddingHorizontal: 12,
     fontSize: 16,
+    color: '#000',
   },
   eyeIcon: {
     padding: 12,
