@@ -18,7 +18,8 @@ import {
 } from 'react-native';
 import { useDispatch, useSelector } from 'react-redux';
 import { useForm, Controller } from 'react-hook-form';
-import { resetOtpState } from '../redux/slices/authSlice/index';
+import { resetOtpState, setCredentials } from '../redux/slices/authSlice/index';
+import { saveCredentials } from '../services/Auth';
 import { useRegisterMutation, useSendOtpMutation, useVerifyOtpMutation } from '../redux/api/authApi';
 import FontAwesome from 'react-native-vector-icons/FontAwesome';
 import { Colors } from '../constants/Colors';
@@ -223,8 +224,8 @@ const Register = () => {
         firstName: savedFormData.firstName,
         lastName: savedFormData.lastName,
         email: savedFormData.email || null,
-        phoneNumber: savedFormData.phone,
-        passwordHash: savedFormData.password,
+        userName: savedFormData.phone,
+        password: savedFormData.password,
       };
 
       // Attempt registration
@@ -241,9 +242,33 @@ const Register = () => {
       }
 
       // Otherwise proceed as normal success
-      toast.show('Registration successful!', { type: 'success' });
-      reset();
-      router.replace('/Login');
+      const token = result?.token || result?.Token || '';
+      const userData = {
+        ...result?.user,
+        firstName: result?.user?.firstName,
+        lastName: result?.user?.lastName,
+        role: result?.user?.roles?.[0] || result?.user?.role,
+        phone: savedFormData.phone,
+      };
+
+      if (token) {
+        dispatch(setCredentials({ token, user: userData }));
+        
+        saveCredentials({
+          token: String(token),
+          phone: String(savedFormData.phone),
+          pass: String(savedFormData.password),
+          rememberMe: true,
+        }).catch((e) => console.error('[REGISTER] saveCredentials error:', e));
+
+        toast.show('Registration successful!', { type: 'success' });
+        reset();
+        router.replace('/Home');
+      } else {
+        toast.show('Registration successful! Please login.', { type: 'success' });
+        reset();
+        router.replace('/Login');
+      }
     } catch (err) {
       
       // Check if it's an OTP verification error

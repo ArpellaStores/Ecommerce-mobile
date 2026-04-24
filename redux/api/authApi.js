@@ -8,7 +8,7 @@ export const authApi = api.injectEndpoints({
         method: "POST",
         body: {
           userName: credentials.userName || credentials.phoneNumber,
-          passwordHash: credentials.passwordHash || credentials.password,
+          password: credentials.passwordHash || credentials.password,
         },
       }),
     }),

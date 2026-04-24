@@ -106,7 +106,7 @@ const Login = () => {
           await new Promise((r) => setTimeout(r, 1000));
         }
 
-        const result = await loginApi({ userName: phone, passwordHash: pass }).unwrap();
+        const result = await loginApi({ userName: phone, password: pass }).unwrap();
 
 
         const userObject = Array.isArray(result) ? result[0] : result;
@@ -193,7 +193,7 @@ const Login = () => {
     try {
       const result = await loginApi({
         userName: data.phone,
-        passwordHash: data.password,
+        password: data.password,
       }).unwrap();
 
 

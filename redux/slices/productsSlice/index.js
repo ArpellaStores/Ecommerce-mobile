@@ -103,13 +103,17 @@ const productsSlice = createSlice({
     },
 
     setCategories(state, action) {
-      state.categories = Array.isArray(action.payload) ? action.payload : [];
+      const payload = action.payload;
+      state.categories = Array.isArray(payload)
+        ? payload
+        : payload?.data ?? payload?.content ?? payload?.items ?? [];
     },
 
     setSubcategories(state, action) {
-      state.subcategories = Array.isArray(action.payload)
-        ? action.payload
-        : [];
+      const payload = action.payload;
+      state.subcategories = Array.isArray(payload)
+        ? payload
+        : payload?.data ?? payload?.content ?? payload?.items ?? [];
     },
 
     setProductImageData(state, action) {
