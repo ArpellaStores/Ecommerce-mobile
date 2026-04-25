@@ -104,7 +104,7 @@ const ProfilePage = () => {
   const onLogout = async () => {
     await clearCredentials()
     dispatch(logout())
-    exitApp()
+    router.replace('/Login')
   }
 
   const lookupProductFromRedux = useMemo(() => {

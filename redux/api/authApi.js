@@ -15,7 +15,7 @@ export const authApi = api.injectEndpoints({
 
     register: builder.mutation({
       query: (userData) => ({
-        url: "/register",
+        url: "/register?platform=mobile",
         method: "POST",
         body: userData,
       }),
