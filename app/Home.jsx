@@ -259,7 +259,7 @@ const Home = () => {
   }, [rawProducts, selectedCategory, selectedSub, searchTerm])
 
   useEffect(() => {
-    if (selectedCategory === 'All') return
+    if (selectedCategory === 'All' && !searchTerm) return
     if (isFilteringRef.current) return
     if (!Array.isArray(rawProducts)) return
     if (filteredProducts.length > 0) return
@@ -277,7 +277,7 @@ const Home = () => {
     return () => {
       isFilteringRef.current = false
     }
-  }, [selectedCategory, filteredProducts.length, rawProducts.length, hasMore, loading])
+  }, [selectedCategory, searchTerm, filteredProducts.length, rawProducts.length, hasMore, loading])
 
   const handleLoadMore = useCallback(async () => {
     if (!hasMore || isLoadingMore || loading) return
@@ -300,10 +300,8 @@ const Home = () => {
     if (categoriesRef.current && typeof index === 'number') {
       setTimeout(() => {
         try {
-          categoriesRef.current?.scrollToIndex({ index, animated: true, viewPosition: 0.5 })
-        } catch {
-          categoriesRef.current?.scrollToOffset({ offset: index * 90, animated: true })
-        }
+          categoriesRef.current?.scrollTo({ x: index * 90, animated: true })
+        } catch {}
       }, 100)
     }
   }, [])
@@ -590,33 +588,45 @@ const Home = () => {
         />
 
         <View style={styles.categoriesWrapper}>
-          <FlatList
+          <ScrollView
             ref={categoriesRef}
-            data={categories}
             horizontal
             showsHorizontalScrollIndicator={false}
-            keyExtractor={(item) => String(item.id)}
             contentContainerStyle={styles.filterContainer}
-            renderItem={renderCategoryItem}
-            initialNumToRender={10}
-            maxToRenderPerBatch={5}
-            windowSize={5}
-            removeClippedSubviews={true}
             nestedScrollEnabled={true}
-          />
+          >
+            {categories.map((item, index) => (
+              <React.Fragment key={String(item.id)}>
+                {renderCategoryItem({ item, index })}
+              </React.Fragment>
+            ))}
+          </ScrollView>
         </View>
 
         {selectedCategory !== 'All' && subsOf(selectedCategory).length > 0 && (
           <View style={styles.categoriesWrapper}>
             <View style={styles.subcategoryContainer}>
-              <FlatList
-                data={subsOf(selectedCategory)}
+              <ScrollView
                 horizontal
                 showsHorizontalScrollIndicator={false}
-                keyExtractor={(item) => String(item.id ?? item._id ?? item.subcategoryId)}
                 contentContainerStyle={styles.subcategoryContent}
-                renderItem={({ item }) => (
+                nestedScrollEnabled={true}
+              >
+                {selectedSub && (
                   <TouchableOpacity
+                    onPress={onClearSubcategory}
+                    style={[styles.subcategoryButton, { backgroundColor: '#ff6b6b' }]}
+                    activeOpacity={0.7}
+                  >
+                    <FontAwesome name="times" size={12} color="#fff" />
+                    <Text style={[styles.subcategoryText, { color: '#fff', marginLeft: 4 }]}>
+                      Clear
+                    </Text>
+                  </TouchableOpacity>
+                )}
+                {subsOf(selectedCategory).map((item) => (
+                  <TouchableOpacity
+                    key={String(item.id ?? item._id ?? item.subcategoryId)}
                     onPress={() => onSelectSubcategory(item)}
                     style={[
                       styles.subcategoryButton,
@@ -635,25 +645,8 @@ const Home = () => {
                       {item.subcategoryName ?? item.name ?? 'Unknown'}
                     </Text>
                   </TouchableOpacity>
-                )}
-                ListHeaderComponent={
-                  selectedSub ? (
-                    <TouchableOpacity
-                      onPress={onClearSubcategory}
-                      style={[styles.subcategoryButton, { backgroundColor: '#ff6b6b' }]}
-                      activeOpacity={0.7}
-                    >
-                      <FontAwesome name="times" size={12} color="#fff" />
-                      <Text style={[styles.subcategoryText, { color: '#fff', marginLeft: 4 }]}>
-                        Clear
-                      </Text>
-                    </TouchableOpacity>
-                  ) : null
-                }
-                initialNumToRender={8}
-                maxToRenderPerBatch={4}
-                nestedScrollEnabled={true}
-              />
+                ))}
+              </ScrollView>
             </View>
           </View>
         )}

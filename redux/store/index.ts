@@ -15,10 +15,16 @@ const authPersistConfig = {
   whitelist: ["token", "user", "isAuthenticated"],
 };
 
+const productsPersistConfig = {
+  key: "productsState",
+  storage: AsyncStorage,
+  whitelist: ["products", "categories", "subcategories", "productsById"],
+};
+
 const rootReducer = combineReducers({
   auth: persistReducer(authPersistConfig, authReducer),
   cart: cartReducer,
-  products: productsReducer,
+  products: persistReducer(productsPersistConfig, productsReducer),
   [api.reducerPath]: api.reducer,
 });
 

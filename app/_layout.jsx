@@ -226,12 +226,15 @@ function AppContent() {
   )
 }
 
+import AppUpdateModal from '../components/AppUpdateModal'
+
 export default function RootLayout() {
   return (
     <SafeAreaProvider>
       <Provider store={store}>
         <ToastProvider>
           <AppContent />
+          <AppUpdateModal />
         </ToastProvider>
       </Provider>
     </SafeAreaProvider>
