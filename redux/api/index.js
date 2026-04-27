@@ -4,8 +4,15 @@ import {
   fetchBaseQuery,
 } from "@reduxjs/toolkit/query/react";
 import { setSignOut } from "../slices/authSlice";
-
 import { router } from "expo-router";
+import * as SecureStore from "expo-secure-store";
+
+const clearStoredCredentials = async () => {
+  try {
+    await SecureStore.deleteItemAsync('userToken')
+    await SecureStore.deleteItemAsync('token')
+  } catch {}
+};
 
 const baseQuery = fetchBaseQuery({
   baseUrl: API_URL,
@@ -21,7 +28,7 @@ const baseQuery = fetchBaseQuery({
 
 const baseQueryWithLogout = async (args, queryApi, extraOptions) => {
   const url = typeof args === "string" ? args : args.url;
-  
+
   const state = queryApi.getState();
   const token = state.auth?.token;
 
@@ -45,12 +52,19 @@ const baseQueryWithLogout = async (args, queryApi, extraOptions) => {
 
   const result = await baseQuery(args, queryApi, extraOptions);
 
-  if (result?.error?.status === 401 && !url?.includes("login")) {
+  const status = result?.error?.status;
+
+  if (status === 401 && !url?.includes('login')) {
+    console.warn(`[API] 401 on ${url} — session expired, clearing and redirecting to Login.`);
     queryApi.dispatch(api.util.resetApiState());
     queryApi.dispatch(setSignOut());
+    clearStoredCredentials();
     if (router && router.replace) {
       router.replace('/Login');
     }
+  } else if (status === 403) {
+    // 403 = authenticated but restricted endpoint — do NOT sign out, just log it
+    console.warn(`[API] 403 on ${url} — endpoint restricted for this account role.`);
   }
 
   return result;
@@ -61,10 +75,9 @@ export const api = createApi({
   baseQuery: baseQueryWithLogout,
   endpoints: () => ({}),
   tagTypes: ["Products", "Categories", "Orders"],
-  refetchOnMountOrArgChange: true,
-  refetchOnFocus: true,
+  refetchOnMountOrArgChange: 60,
   refetchOnReconnect: true,
-  keepUnusedDataFor: 0,
+  keepUnusedDataFor: 300,
   extractRehydrationInfo(action, { reducerPath }) {
     if (action.type === "persist/REHYDRATE") {
       return action.payload?.[reducerPath];

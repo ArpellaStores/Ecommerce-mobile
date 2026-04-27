@@ -102,6 +102,16 @@ function AppContent() {
   useEffect(() => {
     if (isChecking || !initialRoute) return
 
+    // If the user gets signed out (e.g. 403 from API), clear the latch and redirect
+    if (isAuthenticated === false) {
+      hasNavigatedToHomeRef.current = false
+      const currentPath = router.getPathname?.() ?? ''
+      if (!currentPath.includes('/Login')) {
+        router.replace('/Login')
+      }
+      return
+    }
+
     if (hasNavigatedToHomeRef.current) {
       return
     }
@@ -109,18 +119,14 @@ function AppContent() {
     const effectiveAuth = typeof isAuthenticated === 'boolean' ? isAuthenticated : null
     const target = effectiveAuth === null ? initialRoute : effectiveAuth ? 'Home' : 'Login'
 
-
     const currentPath = router.getPathname?.() ?? ''
 
-
     if (!currentPath.includes(`/${target}`)) {
-
       if (target === 'Home') {
         hasNavigatedToHomeRef.current = true
       }
       router.replace(`/${target}`)
     } else if (target === 'Home') {
-      // Already on Home — latch the ref
       hasNavigatedToHomeRef.current = true
     }
   }, [isChecking, initialRoute, isAuthenticated, router])

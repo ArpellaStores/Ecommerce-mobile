@@ -33,7 +33,7 @@ const store = configureStore({
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware({
       serializableCheck: false,
-      immutableStateInvariant: false,
+      immutableCheck: false,
     }).concat(api.middleware),
 });
 

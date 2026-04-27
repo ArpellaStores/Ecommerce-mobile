@@ -154,7 +154,9 @@ const Home = () => {
   const isFilteringRef = useRef(false)
 
   useEffect(() => {
+    console.log(`[FETCH STATUS] Products: isLoading=${pageLoading}, error=${pageError ? JSON.stringify(pageError) : 'none'}, hasData=${!!pageData}`)
     if (pageData && pageData.items && !pageFetching) {
+      console.log(`[FETCH LOG] Products fetched for page ${currentPageRef.current}, total items: ${pageData.items.length}`)
       if (currentPageRef.current === 1) {
         dispatch(setProducts(pageData.items))
       } else {
@@ -167,15 +169,23 @@ const Home = () => {
         )
       }
     }
-  }, [pageData, pageFetching, dispatch])
+  }, [pageData, pageFetching, pageLoading, pageError, dispatch])
 
   useEffect(() => {
-    if (catData) dispatch(setCategories(catData))
-  }, [catData, dispatch])
+    console.log(`[FETCH STATUS] Categories: isLoading=${catLoading}, error=${catError ? JSON.stringify(catError) : 'none'}, hasData=${!!catData}`)
+    if (catData) {
+      console.log(`[FETCH LOG] Categories fetched: ${catData.length}`)
+      dispatch(setCategories(catData))
+    }
+  }, [catData, catLoading, catError, dispatch])
 
   useEffect(() => {
-    if (subcatData) dispatch(setSubcategories(subcatData))
-  }, [subcatData, dispatch])
+    console.log(`[FETCH STATUS] Subcategories: isLoading=${subcatLoading}, error=${subcatError ? JSON.stringify(subcatError) : 'none'}, hasData=${!!subcatData}`)
+    if (subcatData) {
+      console.log(`[FETCH LOG] Subcategories fetched: ${subcatData.length}`)
+      dispatch(setSubcategories(subcatData))
+    }
+  }, [subcatData, subcatLoading, subcatError, dispatch])
 
   const resolveCategoryName = (c) => c?.categoryName ?? c?.name ?? c?.title ?? 'Unknown'
   const resolveSubName = (s) => s?.subcategoryName ?? s?.name ?? s?.title ?? 'Unknown'
@@ -233,10 +243,12 @@ const Home = () => {
     [rawSubcategories]
   )
 
+  const isAllSelected = selectedCategory === 'All' || selectedCategory?.id === 'All'
+
   const filteredProducts = useMemo(() => {
     let list = Array.isArray(rawProducts) ? rawProducts : []
 
-    if (selectedCategory !== 'All') {
+    if (!isAllSelected) {
       const selId = selectedCategory?.id ?? selectedCategory
       list = list.filter((p) => String(p.category) === String(selId))
     }
@@ -245,7 +257,7 @@ const Home = () => {
       list = list.filter((p) => String(p.subcategory) === String(selectedSub.id))
     }
 
-    if (searchTerm && searchTerm.trim()) {
+    if (searchTerm && searchTerm.trim().length >= 3) {
       const t = searchTerm.trim().toLowerCase()
       list = list.filter((p) => {
         const nm = String(p.name || p.productName || p.inventoryName || '').toLowerCase()
@@ -256,28 +268,31 @@ const Home = () => {
     }
 
     return list
-  }, [rawProducts, selectedCategory, selectedSub, searchTerm])
+  }, [rawProducts, selectedCategory, selectedSub, searchTerm, isAllSelected])
 
   useEffect(() => {
-    if (selectedCategory === 'All' && !searchTerm) return
+    if (isAllSelected && (!searchTerm || searchTerm.trim().length < 3)) return
     if (isFilteringRef.current) return
     if (!Array.isArray(rawProducts)) return
     if (filteredProducts.length > 0) return
     if (!hasMore) return
-    if (loading) return
+    if (loading || pageFetching) return
 
     isFilteringRef.current = true
     const nextPage = currentPageRef.current + 1
+    console.log(`[FETCH LOG] Auto-fetching page ${nextPage} because no items match current filter/search.`)
     setCurrentPage((prev) => {
       const newVal = Math.max(prev, nextPage)
       currentPageRef.current = newVal
       return newVal
     })
 
-    return () => {
+    // Remove the early cleanup that causes infinite loops.
+    // It will be reset when `pageFetching` becomes true then false, or when dependencies change.
+    setTimeout(() => {
       isFilteringRef.current = false
-    }
-  }, [selectedCategory, searchTerm, filteredProducts.length, rawProducts.length, hasMore, loading])
+    }, 500)
+  }, [isAllSelected, selectedCategory, searchTerm, filteredProducts.length, rawProducts.length, hasMore, loading, pageFetching])
 
   const handleLoadMore = useCallback(async () => {
     if (!hasMore || isLoadingMore || loading) return
@@ -300,8 +315,12 @@ const Home = () => {
     if (categoriesRef.current && typeof index === 'number') {
       setTimeout(() => {
         try {
-          categoriesRef.current?.scrollTo({ x: index * 90, animated: true })
-        } catch {}
+          categoriesRef.current?.scrollToIndex({ index, animated: true, viewPosition: 0.5 })
+        } catch {
+          try {
+            categoriesRef.current?.scrollToOffset({ offset: index * 90, animated: true })
+          } catch (e) {}
+        }
       }, 100)
     }
   }, [])
@@ -592,7 +611,7 @@ const Home = () => {
             ref={categoriesRef}
             horizontal
             showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.filterContainer}
+            contentContainerStyle={[styles.filterContainer, { flexDirection: 'row' }]}
             nestedScrollEnabled={true}
           >
             {categories.map((item, index) => (
@@ -603,13 +622,13 @@ const Home = () => {
           </ScrollView>
         </View>
 
-        {selectedCategory !== 'All' && subsOf(selectedCategory).length > 0 && (
+        {!isAllSelected && subsOf(selectedCategory).length > 0 && (
           <View style={styles.categoriesWrapper}>
             <View style={styles.subcategoryContainer}>
               <ScrollView
                 horizontal
                 showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.subcategoryContent}
+                contentContainerStyle={[styles.subcategoryContent, { flexDirection: 'row' }]}
                 nestedScrollEnabled={true}
               >
                 {selectedSub && (
@@ -651,7 +670,7 @@ const Home = () => {
           </View>
         )}
 
-        {(selectedCategory !== 'All' || selectedSub) && (
+        {(!isAllSelected || selectedSub) && (
           <View style={styles.activeFiltersContainer}>
             <Text style={styles.activeFiltersText}>
               Filters: {selectedCategory?.name ?? (selectedCategory === 'All' ? 'All' : '')}
@@ -666,7 +685,7 @@ const Home = () => {
             <View style={styles.centered}>
               <FontAwesome name="inbox" size={48} color="#ccc" />
               <Text style={styles.emptyText}>No products found</Text>
-              {(selectedCategory !== 'All' || selectedSub) && (
+              {(!isAllSelected || selectedSub) && (
                 <TouchableOpacity
                   style={styles.clearFiltersButton}
                   onPress={() => {

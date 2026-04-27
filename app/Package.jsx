@@ -15,7 +15,7 @@ import Icon from 'react-native-vector-icons/FontAwesome'
 import { useRouter } from 'expo-router'
 import axios from 'axios'
 import { baseUrl } from '../constants/const'
-import { toast } from 'react-native-toast-notifications'
+import { useToast } from 'react-native-toast-notifications'
 import { useSelector, useDispatch } from 'react-redux'
 import { useGetPagedProductsQuery } from '../redux/api/productsApi'
 import { setProducts } from '../redux/slices/productsSlice'
@@ -296,6 +296,7 @@ const Package = () => {
   const router = useRouter()
   const insets = useSafeAreaInsets()
   const dispatch = useDispatch()
+  const toast = useToast()
 
 
   const [orders, setOrders] = useState([])
@@ -367,7 +368,7 @@ const Package = () => {
         setOrders(userOrders)
       } catch (error) {
         console.error('Error fetching orders:', error)
-        toast.show && toast.show('Failed to load orders. Please try again later.', { type: 'error' })
+        toast?.show?.('Failed to load orders. Please try again later.', { type: 'danger' })
         setOrders([])
       } finally {
         setLoading(false)
