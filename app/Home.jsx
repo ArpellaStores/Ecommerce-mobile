@@ -154,9 +154,7 @@ const Home = () => {
   const isFilteringRef = useRef(false)
 
   useEffect(() => {
-    console.log(`[FETCH STATUS] Products: isLoading=${pageLoading}, error=${pageError ? JSON.stringify(pageError) : 'none'}, hasData=${!!pageData}`)
     if (pageData && pageData.items && !pageFetching) {
-      console.log(`[FETCH LOG] Products fetched for page ${currentPageRef.current}, total items: ${pageData.items.length}`)
       if (currentPageRef.current === 1) {
         dispatch(setProducts(pageData.items))
       } else {
@@ -172,20 +170,16 @@ const Home = () => {
   }, [pageData, pageFetching, pageLoading, pageError, dispatch])
 
   useEffect(() => {
-    console.log(`[FETCH STATUS] Categories: isLoading=${catLoading}, error=${catError ? JSON.stringify(catError) : 'none'}, hasData=${!!catData}`)
     if (catData) {
-      console.log(`[FETCH LOG] Categories fetched: ${catData.length}`)
       dispatch(setCategories(catData))
     }
-  }, [catData, catLoading, catError, dispatch])
+  }, [catData, dispatch])
 
   useEffect(() => {
-    console.log(`[FETCH STATUS] Subcategories: isLoading=${subcatLoading}, error=${subcatError ? JSON.stringify(subcatError) : 'none'}, hasData=${!!subcatData}`)
     if (subcatData) {
-      console.log(`[FETCH LOG] Subcategories fetched: ${subcatData.length}`)
       dispatch(setSubcategories(subcatData))
     }
-  }, [subcatData, subcatLoading, subcatError, dispatch])
+  }, [subcatData, dispatch])
 
   const resolveCategoryName = (c) => c?.categoryName ?? c?.name ?? c?.title ?? 'Unknown'
   const resolveSubName = (s) => s?.subcategoryName ?? s?.name ?? s?.title ?? 'Unknown'
@@ -280,7 +274,6 @@ const Home = () => {
 
     isFilteringRef.current = true
     const nextPage = currentPageRef.current + 1
-    console.log(`[FETCH LOG] Auto-fetching page ${nextPage} because no items match current filter/search.`)
     setCurrentPage((prev) => {
       const newVal = Math.max(prev, nextPage)
       currentPageRef.current = newVal
