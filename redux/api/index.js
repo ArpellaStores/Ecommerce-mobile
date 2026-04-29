@@ -29,13 +29,31 @@ const baseQuery = fetchBaseQuery({
 const baseQueryWithLogout = async (args, queryApi, extraOptions) => {
   const url = typeof args === "string" ? args : args.url;
 
+  const isPublicAuthEndpoint = url?.includes("login") || url?.includes("otp") || url?.includes("register");
+
+  if (!isPublicAuthEndpoint) {
+    // Wait for redux-persist to finish rehydrating before reading the token.
+    // Without this, the token is null during the rehydration window and every
+    // protected request fires as unauthenticated, producing a spurious 401.
+    const isRehydrated = () => queryApi.getState().auth?._persist?.rehydrated === true;
+    if (!isRehydrated()) {
+      await new Promise((resolve) => {
+        const interval = setInterval(() => {
+          if (isRehydrated()) {
+            clearInterval(interval);
+            resolve();
+          }
+        }, 50);
+        // Safety timeout: give up after 5 s and let the request proceed as-is.
+        setTimeout(() => { clearInterval(interval); resolve(); }, 5000);
+      });
+    }
+  }
+
   const state = queryApi.getState();
   const token = state.auth?.token;
 
-  const isPublicAuthEndpoint = url?.includes("login") || url?.includes("otp") || url?.includes("register");
-
   if (!token && !isPublicAuthEndpoint) {
-    console.warn("[API] No token found for private endpoint. Forcing logout and redirect.");
     queryApi.dispatch(api.util.resetApiState());
     queryApi.dispatch(setSignOut());
     if (router && router.replace) {
