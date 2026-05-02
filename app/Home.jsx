@@ -4,22 +4,20 @@ import React, {
   useMemo,
   useRef,
   useState,
-  memo,
 } from 'react'
 import {
   View,
   Text,
   FlatList,
-  Image,
-  TouchableOpacity,
+  Pressable,
   Modal,
   TextInput,
   ActivityIndicator,
   useWindowDimensions,
   StyleSheet,
   ScrollView,
-  Platform,
   Alert,
+  unstable_batchedUpdates,
 } from 'react-native'
 import { useDispatch, useSelector, shallowEqual } from 'react-redux'
 import { addItemToCart } from '../redux/slices/cartSlice'
@@ -30,27 +28,76 @@ import {
   useGetCategoriesQuery,
   useGetSubcategoriesQuery,
   useGetInventoriesQuery,
-  useGetProductImageQuery,
 } from '../redux/api/productsApi'
 import {
   setProducts,
   appendProducts,
   setCategories,
   setSubcategories,
-  setProductImageData,
 } from '../redux/slices/productsSlice'
-import * as FileSystem from 'expo-file-system/legacy'
-import * as Crypto from 'expo-crypto'
 import BottomNav from '../components/BottomNav'
 import ProductImage from '../components/ProductImage'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
-
-
 
 const NAV_HEIGHT = 64
 const H_GUTTER = 15
 const EMPTY_ARR = Object.freeze([])
 
+// ─── Memoised product card ────────────────────────────────────────────────────
+// Extracted as a named component so React.memo works correctly and the card
+// never re-renders unless its own data changes.
+const ProductCard = React.memo(({ item, cardWidth, imageHeight, inventoryMap, onSelect }) => {
+  const matchId = String(item.id ?? item._id ?? item.productId ?? item.name ?? '').toLowerCase()
+  const invStock = inventoryMap.has(matchId) ? inventoryMap.get(matchId) : null
+  const availableQty =
+    invStock ??
+    item.quantity ??
+    item.stock ??
+    item.stockQuantity ??
+    item.availableUnits ??
+    item.inventoryCount ??
+    null
+  const isOutOfStock = availableQty !== null && Number(availableQty) <= 0
+
+  return (
+    <Pressable
+      style={({ pressed }) => [
+        styles.card,
+        { width: cardWidth, margin: 8 },
+        isOutOfStock && { opacity: 0.6 },
+        pressed && !isOutOfStock && { opacity: 0.82 },
+      ]}
+      onPress={() => !isOutOfStock && onSelect(item)}
+      android_ripple={isOutOfStock ? null : { color: 'rgba(90,36,40,0.12)', borderless: false }}
+    >
+      <View style={[styles.imageContainer, { height: imageHeight }]}>
+        <ProductImage product={item} style={styles.cardImage} resizeMode="cover" />
+        {isOutOfStock ? (
+          <View style={styles.outOfStockRibbon}>
+            <Text style={styles.outOfStockText}>OUT OF STOCK</Text>
+          </View>
+        ) : (
+          <View style={styles.quickAddBadge}>
+            <FontAwesome name="plus" size={12} color="#fff" />
+          </View>
+        )}
+      </View>
+
+      <View style={styles.cardContent}>
+        <Text style={styles.productName} numberOfLines={2}>
+          {item.name || item.productName || 'Unnamed Product'}
+        </Text>
+        <View style={styles.priceContainer}>
+          <Text style={styles.productPrice}>
+            KSH {item.price != null ? Number(item.price).toLocaleString() : '0'}
+          </Text>
+        </View>
+      </View>
+    </Pressable>
+  )
+})
+
+// ─── Home ─────────────────────────────────────────────────────────────────────
 const Home = () => {
   const dispatch = useDispatch()
   const router = useRouter()
@@ -119,138 +166,110 @@ const Home = () => {
   const hasMore = productsSlice.hasMore
 
   const cartState = useSelector((s) => s.cart)
-
   const cartCount = useMemo(() => {
     const items = cartState?.items ?? cartState?.cartItems ?? {}
-    if (Array.isArray(items)) {
+    if (Array.isArray(items))
       return items.reduce((sum, it) => sum + (Number(it?.quantity) || 0), 0)
-    }
     return Object.values(items).reduce((sum, it) => sum + (Number(it?.quantity) || 0), 0)
   }, [cartState])
-
-
 
   const { width, height } = useWindowDimensions()
   const isLandscape = width > height
   const numColumns = isLandscape ? 4 : 2
 
+  // Pre-calculate card dimensions once per layout change, not inside renderItem
+  const cardDimensions = useMemo(() => {
+    const totalAvailable = Math.max(0, width - 30)
+    const perCardGutter = 16
+    const cardWidth = Math.floor((totalAvailable - numColumns * perCardGutter) / numColumns)
+    const imageHeight = isLandscape ? 140 : 200
+    return { cardWidth, imageHeight }
+  }, [width, numColumns, isLandscape])
+
   const [selectedCategory, setSelectedCategory] = useState('All')
   const [selectedSub, setSelectedSub] = useState(null)
   const [searchTerm, setSearchTerm] = useState('')
-
   const [modalVisible, setModalVisible] = useState(false)
   const [selectedProduct, setSelectedProduct] = useState(null)
 
   const currentPageRef = useRef(1)
-
-  useEffect(() => {
-    currentPageRef.current = currentPage
-  }, [currentPage])
-
-  const [isLoadingMore, setIsLoadingMore] = useState(false)
-  const [initialLoadComplete, setInitialLoadComplete] = useState(false)
-  const initialLoadAttempted = useRef(false)
+  const lastFilterFetchRef = useRef(0)
   const categoriesRef = useRef(null)
-  const isFilteringRef = useRef(false)
+  const [initialLoadComplete, setInitialLoadComplete] = useState(false)
+
+  useEffect(() => { currentPageRef.current = currentPage }, [currentPage])
 
   useEffect(() => {
-    if (pageData && pageData.items && !pageFetching) {
+    if (pageData?.items && !pageFetching) {
       if (currentPageRef.current === 1) {
         dispatch(setProducts(pageData.items))
       } else {
-        dispatch(
-          appendProducts({
-            items: pageData.items,
-            pageNumber: currentPageRef.current,
-            hasMore: pageData.hasMore,
-          })
-        )
+        dispatch(appendProducts({
+          items: pageData.items,
+          pageNumber: currentPageRef.current,
+          hasMore: pageData.hasMore,
+        }))
       }
     }
-  }, [pageData, pageFetching, pageLoading, pageError, dispatch])
+  }, [pageData, pageFetching, dispatch])
 
-  useEffect(() => {
-    if (catData) {
-      dispatch(setCategories(catData))
-    }
-  }, [catData, dispatch])
-
-  useEffect(() => {
-    if (subcatData) {
-      dispatch(setSubcategories(subcatData))
-    }
-  }, [subcatData, dispatch])
+  useEffect(() => { if (catData) dispatch(setCategories(catData)) }, [catData, dispatch])
+  useEffect(() => { if (subcatData) dispatch(setSubcategories(subcatData)) }, [subcatData, dispatch])
+  useEffect(() => { if (!initialLoadComplete && !loading) setInitialLoadComplete(true) }, [loading, initialLoadComplete])
 
   const resolveCategoryName = (c) => c?.categoryName ?? c?.name ?? c?.title ?? 'Unknown'
   const resolveSubName = (s) => s?.subcategoryName ?? s?.name ?? s?.title ?? 'Unknown'
 
   const categories = useMemo(() => {
     const byCat = {}
-
     if (Array.isArray(rawSubcategories)) {
       rawSubcategories.forEach((sc) => {
         const parentId = sc.categoryId ?? sc.parentCategoryId ?? sc.catId ?? sc.category ?? null
-        const normalizedParent =
-          parentId === null || typeof parentId === 'undefined' ? null : parentId
         const id = sc.id ?? sc._id ?? sc.subcategoryId ?? sc.subcategory
         const name = resolveSubName(sc)
-
-        if (normalizedParent != null && id != null) {
-          byCat[String(normalizedParent)] = byCat[String(normalizedParent)] || []
-          byCat[String(normalizedParent)].push({ ...sc, id, subcategoryName: name })
+        if (parentId != null && id != null) {
+          const key = String(parentId)
+          byCat[key] = byCat[key] || []
+          byCat[key].push({ ...sc, id, subcategoryName: name })
         }
       })
     }
-
     const cats = Array.isArray(rawCategories)
       ? rawCategories.map((c) => {
           const id = c.id ?? c._id ?? c.categoryId ?? c.category
           const name = resolveCategoryName(c)
-          let subs = []
-
-          if (Array.isArray(c.subcategories) && c.subcategories.length > 0) {
-            subs = c.subcategories.map((sc) => ({
-              ...sc,
-              id: sc.id ?? sc._id ?? sc.subcategoryId ?? sc.subcategory,
-              subcategoryName: resolveSubName(sc),
-            }))
-          } else {
-            subs = byCat[String(id)] || []
-          }
-
+          const subs =
+            Array.isArray(c.subcategories) && c.subcategories.length > 0
+              ? c.subcategories.map((sc) => ({
+                  ...sc,
+                  id: sc.id ?? sc._id ?? sc.subcategoryId ?? sc.subcategory,
+                  subcategoryName: resolveSubName(sc),
+                }))
+              : byCat[String(id)] || []
           return { ...c, id, name, subcategories: subs }
         })
       : []
-
     return [{ id: 'All', name: 'All', subcategories: [] }, ...cats]
   }, [rawCategories, rawSubcategories])
 
-  useEffect(() => {
-    if (!initialLoadComplete && !loading) setInitialLoadComplete(true)
-  }, [loading, initialLoadComplete])
-
-  const subsOf = useCallback(
-    (cat) => {
-      if (!cat) return EMPTY_ARR
-      return (rawSubcategories || EMPTY_ARR).filter((sc) => String(sc.categoryId) === String(cat.id))
-    },
-    [rawSubcategories]
-  )
-
   const isAllSelected = selectedCategory === 'All' || selectedCategory?.id === 'All'
+
+  const subsOfSelected = useMemo(() => {
+    if (isAllSelected) return EMPTY_ARR
+    return (rawSubcategories || EMPTY_ARR).filter(
+      (sc) => String(sc.categoryId) === String(selectedCategory?.id ?? selectedCategory)
+    )
+  }, [rawSubcategories, selectedCategory, isAllSelected])
 
   const filteredProducts = useMemo(() => {
     let list = Array.isArray(rawProducts) ? rawProducts : []
-
     if (!isAllSelected) {
       const selId = selectedCategory?.id ?? selectedCategory
       list = list.filter((p) => String(p.category) === String(selId))
     }
-
     if (selectedSub) {
       list = list.filter((p) => String(p.subcategory) === String(selectedSub.id))
     }
-
     if (searchTerm && searchTerm.trim().length >= 3) {
       const t = searchTerm.trim().toLowerCase()
       list = list.filter((p) => {
@@ -260,99 +279,87 @@ const Home = () => {
         return nm.includes(t) || cn.includes(t) || sn.includes(t)
       })
     }
-
     return list
   }, [rawProducts, selectedCategory, selectedSub, searchTerm, isAllSelected])
 
+  // Auto-fetch next page when filter returns empty but more pages exist
   useEffect(() => {
     if (isAllSelected && (!searchTerm || searchTerm.trim().length < 3)) return
-    if (isFilteringRef.current) return
-    if (!Array.isArray(rawProducts)) return
-    if (filteredProducts.length > 0) return
-    if (!hasMore) return
-    if (loading || pageFetching) return
-
-    isFilteringRef.current = true
-    const nextPage = currentPageRef.current + 1
+    if (!Array.isArray(rawProducts) || filteredProducts.length > 0) return
+    if (!hasMore || loading || pageFetching) return
+    const now = Date.now()
+    if (now - lastFilterFetchRef.current < 1000) return
+    lastFilterFetchRef.current = now
     setCurrentPage((prev) => {
-      const newVal = Math.max(prev, nextPage)
-      currentPageRef.current = newVal
-      return newVal
+      const next = Math.max(prev, currentPageRef.current + 1)
+      currentPageRef.current = next
+      return next
     })
+  }, [isAllSelected, searchTerm, filteredProducts.length, rawProducts.length, hasMore, loading, pageFetching])
 
-    // Remove the early cleanup that causes infinite loops.
-    // It will be reset when `pageFetching` becomes true then false, or when dependencies change.
-    setTimeout(() => {
-      isFilteringRef.current = false
-    }, 500)
-  }, [isAllSelected, selectedCategory, searchTerm, filteredProducts.length, rawProducts.length, hasMore, loading, pageFetching])
-
-  const handleLoadMore = useCallback(async () => {
-    if (!hasMore || isLoadingMore || loading) return
-    setIsLoadingMore(true)
-    const nextPage = currentPageRef.current + 1
+  const handleLoadMore = useCallback(() => {
+    if (!hasMore || loading || pageFetching) return
     setCurrentPage((prev) => {
-      const newVal = Math.max(prev, nextPage)
-      currentPageRef.current = newVal
-      return newVal
+      const next = prev + 1
+      currentPageRef.current = next
+      return next
     })
-    setIsLoadingMore(false)
-  }, [hasMore, isLoadingMore, loading])
+  }, [hasMore, loading, pageFetching])
 
   const onSelectCategory = useCallback((cat, index) => {
-    setSearchTerm('')
-    setSelectedSub(null)
-    setSelectedCategory(cat || 'All')
-    setSelectedProduct(null)
-
+    unstable_batchedUpdates(() => {
+      setSearchTerm('')
+      setSelectedSub(null)
+      setSelectedCategory(cat || 'All')
+      setSelectedProduct(null)
+    })
     if (categoriesRef.current && typeof index === 'number') {
       setTimeout(() => {
         try {
           categoriesRef.current?.scrollToIndex({ index, animated: true, viewPosition: 0.5 })
         } catch {
-          try {
-            categoriesRef.current?.scrollToOffset({ offset: index * 90, animated: true })
-          } catch (e) {}
+          categoriesRef.current?.scrollToOffset({ offset: index * 90, animated: true })
         }
-      }, 100)
+      }, 80)
     }
   }, [])
 
   const onSelectSubcategory = useCallback((subcat) => {
-    setSearchTerm('')
-    setSelectedSub(subcat)
-    setSelectedProduct(null)
+    unstable_batchedUpdates(() => {
+      setSearchTerm('')
+      setSelectedSub(subcat)
+      setSelectedProduct(null)
+    })
   }, [])
 
   const onClearSubcategory = useCallback(() => {
-    setSelectedSub(null)
-    setSearchTerm('')
+    unstable_batchedUpdates(() => {
+      setSelectedSub(null)
+      setSearchTerm('')
+    })
   }, [])
 
   const onSelectProduct = useCallback((product) => {
-    setSelectedProduct({ ...product, quantity: 1 })
-    setModalVisible(true)
+    unstable_batchedUpdates(() => {
+      setSelectedProduct({ ...product, quantity: 1 })
+      setModalVisible(true)
+    })
   }, [])
 
   const onCloseModal = useCallback(() => {
     setModalVisible(false)
-    setTimeout(() => setSelectedProduct(null), 350)
+    setTimeout(() => setSelectedProduct(null), 300)
   }, [])
 
   const onAddToCart = useCallback(() => {
-    if (!selectedProduct) {
-      console.warn('[ADD TO CART] No selected product')
-      return
-    }
-
+    if (!selectedProduct) return
     const resolvedId = String(
       selectedProduct.id ??
         selectedProduct._id ??
         selectedProduct.productId ??
         selectedProduct.sku ??
-        `${(selectedProduct.name || selectedProduct.productName || 'product').replace(/\s+/g, '-')}-${Date.now()}`
+        `${(selectedProduct.name || 'product').replace(/\s+/g, '-')}-${Date.now()}`
     )
-
     const cartItem = {
       id: resolvedId,
       productId: resolvedId,
@@ -371,115 +378,39 @@ const Home = () => {
       product: selectedProduct,
       item: selectedProduct,
     }
-
-
     try {
-      const result = dispatch(addItemToCart(cartItem))
-    } catch (error) {
-      console.error('[ADD TO CART] dispatch failed:', error)
-      Alert.alert('Cart Error', error?.message || 'Failed to add item to cart')
+      dispatch(addItemToCart(cartItem))
+    } catch (err) {
+      Alert.alert('Cart Error', err?.message || 'Failed to add item to cart')
       return
     }
-
-    setModalVisible(false)
-
-    setTimeout(() => {
+    unstable_batchedUpdates(() => {
+      setModalVisible(false)
       setSelectedProduct(null)
-      Alert.alert(
-        'Added to Cart',
-        `${cartItem.name} x${cartItem.quantity} — KSH ${Number(cartItem.price).toLocaleString()}`,
-        [
-          { text: 'Continue Shopping', style: 'cancel' },
-          {
-            text: 'View Cart',
-            onPress: () => router.push('/cart'),
-          },
-        ],
-        { cancelable: true }
-      )
-    }, 250)
+    })
+    Alert.alert(
+      'Added to Cart',
+      `${cartItem.name} x${cartItem.quantity} — KSH ${Number(cartItem.price).toLocaleString()}`,
+      [
+        { text: 'Continue Shopping', style: 'cancel' },
+        { text: 'View Cart', onPress: () => router.push('/cart') },
+      ],
+      { cancelable: true }
+    )
   }, [dispatch, selectedProduct, router])
 
+  // ── renderItem uses the memoised ProductCard component ──────────────────────
   const renderProductCard = useCallback(
-    ({ item }) => {
-      const horizontalPadding = 30
-      const totalAvailable = Math.max(0, width - horizontalPadding)
-      const perCardGutter = 16
-      const cardWidth = Math.floor((totalAvailable - numColumns * perCardGutter) / numColumns)
-      const imageContainerHeight = isLandscape ? 140 : 200
-
-      const matchId = String(item.id ?? item._id ?? item.productId ?? item.name ?? '').toLowerCase()
-      const invStock = inventoryMap.has(matchId) ? inventoryMap.get(matchId) : null
-      const availableQty =
-        invStock ??
-        item.quantity ??
-        item.stock ??
-        item.stockQuantity ??
-        item.availableUnits ??
-        item.inventoryCount ??
-        null
-      const isOutOfStock = availableQty !== null && Number(availableQty) <= 0
-
-      return (
-        <TouchableOpacity
-          style={[styles.card, { width: cardWidth, margin: 8 }, isOutOfStock && { opacity: 0.6 }]}
-          onPress={() => !isOutOfStock && onSelectProduct(item)}
-          activeOpacity={isOutOfStock ? 1 : 0.7}
-        >
-          <View
-            style={{
-              width: '100%',
-              height: imageContainerHeight,
-              backgroundColor: '#f8f8f8',
-              justifyContent: 'center',
-              alignItems: 'center',
-              overflow: 'hidden',
-            }}
-          >
-            <ProductImage product={item} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
-            {isOutOfStock && (
-              <View style={styles.outOfStockRibbon}>
-                <Text style={styles.outOfStockText}>OUT OF STOCK</Text>
-              </View>
-            )}
-          </View>
-
-          <Text style={styles.productName} numberOfLines={2}>
-            {item.name || item.productName || 'Unnamed Product'}
-          </Text>
-
-          <View style={styles.priceWrapper}>
-            <Text style={styles.productPrice}>
-              KSH {item.price != null ? Number(item.price).toLocaleString() : '0'}
-            </Text>
-          </View>
-        </TouchableOpacity>
-      )
-    },
-    [onSelectProduct, width, numColumns, isLandscape, inventoryMap]
-  )
-
-  const renderCategoryItem = useCallback(
-    ({ item, index }) => {
-      const isActive = String(selectedCategory?.id ?? selectedCategory) === String(item.id)
-      const hasSubs = Array.isArray(item.subcategories) && item.subcategories.length > 0
-
-      return (
-        <TouchableOpacity
-          onPress={() => onSelectCategory(item, index)}
-          style={[styles.filterButton, isActive && styles.filterButtonActive]}
-          activeOpacity={0.7}
-        >
-          <Text style={[styles.filterText, isActive && styles.filterTextActive]}>{item.name}</Text>
-          {hasSubs && (
-            <Text style={{ marginLeft: 4, color: isActive ? '#fff' : '#666', fontSize: 10 }}>
-              ▼
-            </Text>
-          )}
-        </TouchableOpacity>
-      )
-    },
-    [selectedCategory, onSelectCategory]
+    ({ item }) => (
+      <ProductCard
+        item={item}
+        cardWidth={cardDimensions.cardWidth}
+        imageHeight={cardDimensions.imageHeight}
+        inventoryMap={inventoryMap}
+        onSelect={onSelectProduct}
+      />
+    ),
+    [cardDimensions, inventoryMap, onSelectProduct]
   )
 
   const keyExtractor = useCallback((item, index) => {
@@ -488,24 +419,143 @@ const Home = () => {
   }, [])
 
   const getItemLayout = useCallback(
-    (data, index) => {
-      const horizontalPadding = 30
-      const totalAvailable = Math.max(0, width - horizontalPadding)
-      const perCardGutter = 16
-      const cardWidth = Math.floor((totalAvailable - numColumns * perCardGutter) / numColumns)
-      const imageHeight = isLandscape ? 140 : 200
-      const ITEM_HEIGHT = imageHeight + 120
+    (_, index) => {
+      const ITEM_HEIGHT = cardDimensions.imageHeight + 120
       return {
         length: ITEM_HEIGHT,
         offset: ITEM_HEIGHT * Math.floor(index / numColumns),
         index,
       }
     },
-    [width, numColumns, isLandscape]
+    [cardDimensions.imageHeight, numColumns]
   )
 
+  // ── ListHeaderComponent — replaces the outer ScrollView entirely ────────────
+  // By putting the search/category/filter UI here, the single FlatList handles
+  // ALL scrolling and virtualization works properly.
+  const ListHeaderComponent = useCallback(() => (
+    <View style={{ paddingHorizontal: H_GUTTER }}>
+      {/* Search */}
+      <View style={styles.searchContainer}>
+        <FontAwesome name="search" size={16} color="#888" style={styles.searchIcon} />
+        <TextInput
+          style={styles.searchInput}
+          placeholder="Search products…"
+          value={searchTerm}
+          onChangeText={setSearchTerm}
+          returnKeyType="search"
+          clearButtonMode="while-editing"
+        />
+      </View>
+
+      {/* Category chips */}
+      <ScrollView
+        ref={categoriesRef}
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.filterContainer}
+        style={styles.categoriesWrapper}
+      >
+        {categories.map((cat, index) => {
+          const isActive = String(selectedCategory?.id ?? selectedCategory) === String(cat.id)
+          const hasSubs = Array.isArray(cat.subcategories) && cat.subcategories.length > 0
+          return (
+            <Pressable
+              key={String(cat.id)}
+              onPress={() => onSelectCategory(cat, index)}
+              android_ripple={{ color: 'rgba(90,36,40,0.15)', borderless: false }}
+              style={({ pressed }) => [
+                styles.filterButton,
+                isActive && styles.filterButtonActive,
+                pressed && { opacity: 0.75 },
+              ]}
+            >
+              <Text style={[styles.filterText, isActive && styles.filterTextActive]}>
+                {cat.name}
+              </Text>
+              {hasSubs && (
+                <Text style={{ marginLeft: 4, color: isActive ? '#fff' : '#666', fontSize: 10 }}>
+                  ▼
+                </Text>
+              )}
+            </Pressable>
+          )
+        })}
+      </ScrollView>
+
+      {/* Subcategory chips */}
+      {!isAllSelected && subsOfSelected.length > 0 && (
+        <View style={styles.subcategoriesWrapper}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.subcategoryContent}
+          >
+            {selectedSub && (
+              <Pressable
+                onPress={onClearSubcategory}
+                android_ripple={{ color: 'rgba(255,107,107,0.3)', borderless: false }}
+                style={({ pressed }) => [
+                  styles.subcategoryButton,
+                  { backgroundColor: '#ff6b6b' },
+                  pressed && { opacity: 0.75 },
+                ]}
+              >
+                <FontAwesome name="times" size={12} color="#fff" />
+                <Text style={[styles.subcategoryText, { color: '#fff', marginLeft: 4 }]}>
+                  Clear
+                </Text>
+              </Pressable>
+            )}
+            {subsOfSelected.map((sub) => {
+              const isActiveSub = String(selectedSub?.id) === String(sub.id)
+              return (
+                <Pressable
+                  key={String(sub.id ?? sub._id ?? sub.subcategoryId)}
+                  onPress={() => onSelectSubcategory(sub)}
+                  android_ripple={{ color: 'rgba(90,36,40,0.15)', borderless: false }}
+                  style={({ pressed }) => [
+                    styles.subcategoryButton,
+                    isActiveSub && styles.subcategoryButtonActive,
+                    pressed && { opacity: 0.75 },
+                  ]}
+                >
+                  <Text style={[styles.subcategoryText, isActiveSub && styles.subcategoryTextActive]}>
+                    {sub.subcategoryName ?? sub.name ?? 'Unknown'}
+                  </Text>
+                </Pressable>
+              )
+            })}
+          </ScrollView>
+        </View>
+      )}
+
+      {/* Active filter label */}
+      {(!isAllSelected || selectedSub) && (
+        <View style={styles.activeFiltersContainer}>
+          <Text style={styles.activeFiltersText}>
+            Filters: {selectedCategory?.name ?? 'All'}
+            {selectedSub ? ` > ${selectedSub.subcategoryName ?? selectedSub.name}` : ''}{' '}
+            ({filteredProducts.length} products)
+          </Text>
+        </View>
+      )}
+    </View>
+  ), [
+    searchTerm,
+    categories,
+    selectedCategory,
+    isAllSelected,
+    subsOfSelected,
+    selectedSub,
+    filteredProducts.length,
+    onSelectCategory,
+    onSelectSubcategory,
+    onClearSubcategory,
+  ])
+
   const ListFooterComponent = useCallback(() => {
-    if (isLoadingMore || loading) {
+    if (pageFetching) {
       return (
         <View style={styles.footerLoader}>
           <ActivityIndicator size="large" color="#5a2428" />
@@ -513,7 +563,6 @@ const Home = () => {
         </View>
       )
     }
-
     if (!hasMore && Array.isArray(rawProducts) && rawProducts.length > 0) {
       return (
         <View style={styles.footerEnd}>
@@ -525,10 +574,34 @@ const Home = () => {
         </View>
       )
     }
-
     return null
-  }, [isLoadingMore, loading, hasMore, rawProducts, filteredProducts.length])
+  }, [pageFetching, hasMore, rawProducts, filteredProducts.length])
 
+  const ListEmptyComponent = useCallback(() => {
+    if (loading) return null
+    return (
+      <View style={[styles.centered, { marginTop: 60 }]}>
+        <FontAwesome name="inbox" size={48} color="#ccc" />
+        <Text style={styles.emptyText}>No products found</Text>
+        {(!isAllSelected || selectedSub) && (
+          <Pressable
+            style={styles.clearFiltersButton}
+            onPress={() => {
+              unstable_batchedUpdates(() => {
+                setSelectedCategory('All')
+                setSelectedSub(null)
+                setSearchTerm('')
+              })
+            }}
+          >
+            <Text style={styles.clearFiltersText}>Clear Filters</Text>
+          </Pressable>
+        )}
+      </View>
+    )
+  }, [loading, isAllSelected, selectedSub])
+
+  // ── Loading / error screens ─────────────────────────────────────────────────
   if (!initialLoadComplete) {
     return (
       <View style={styles.overlayContainer}>
@@ -545,257 +618,164 @@ const Home = () => {
     return (
       <View style={styles.centered}>
         <Text style={styles.errorText}>{String(error)}</Text>
-        <TouchableOpacity
+        <Pressable
           style={styles.retryButton}
           onPress={() => {
             setInitialLoadComplete(false)
-            initialLoadAttempted.current = false
-            refetchProducts()
-            refetchCats()
-            refetchSubs()
-            refetchInvs()
+            refetchProducts(); refetchCats(); refetchSubs(); refetchInvs()
           }}
         >
           <Text style={styles.retryText}>Retry</Text>
-        </TouchableOpacity>
+        </Pressable>
       </View>
     )
   }
 
+  // ── Main render ─────────────────────────────────────────────────────────────
   return (
     <View style={[styles.container, { paddingBottom: Math.max(insets.bottom, 12) }]}>
+      {/* Header */}
       <View style={[styles.header, { paddingHorizontal: H_GUTTER }]}>
         <Text style={styles.title}>Arpella Stores</Text>
-        <TouchableOpacity
+        <Pressable
           onPress={() => router.push('/cart')}
+          android_ripple={{ color: 'rgba(90,36,40,0.2)', borderless: true, radius: 20 }}
+          style={({ pressed }) => [styles.cartButton, pressed && { opacity: 0.7 }]}
           accessibilityRole="button"
           accessibilityLabel="Open cart"
         >
-          <View style={{ width: 36, height: 36, justifyContent: 'center', alignItems: 'center' }}>
-            <FontAwesome name="shopping-cart" size={24} />
-            {cartCount > 0 && (
-              <View style={styles.cartBadge} pointerEvents="none">
-                <Text style={styles.cartBadgeText}>{cartCount > 99 ? '99+' : cartCount}</Text>
-              </View>
-            )}
-          </View>
-        </TouchableOpacity>
+          <FontAwesome name="shopping-cart" size={24} color="#333" />
+          {cartCount > 0 && (
+            <View style={styles.cartBadge} pointerEvents="none">
+              <Text style={styles.cartBadgeText}>{cartCount > 99 ? '99+' : cartCount}</Text>
+            </View>
+          )}
+        </Pressable>
       </View>
 
-      <ScrollView
-        style={{ flex: 1 }}
+      {/*
+        THE KEY FIX: one single FlatList owns all scrolling.
+        ListHeaderComponent contains search + categories + filters.
+        This restores proper virtualization — only visible cards are rendered,
+        so the JS thread is free to handle touches instantly.
+      */}
+      <FlatList
+        data={filteredProducts}
+        numColumns={numColumns}
+        keyExtractor={keyExtractor}
+        renderItem={renderProductCard}
+        ListHeaderComponent={ListHeaderComponent}
+        ListFooterComponent={ListFooterComponent}
+        ListEmptyComponent={ListEmptyComponent}
+        onEndReached={handleLoadMore}
+        onEndReachedThreshold={0.5}
+        key={`cols-${numColumns}`}
         contentContainerStyle={{
           paddingBottom: 24 + NAV_HEIGHT + Math.max(insets.bottom, 12),
-          paddingHorizontal: 15,
         }}
-        showsVerticalScrollIndicator={true}
-        nestedScrollEnabled={true}
-      >
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Search products…"
-          value={searchTerm}
-          onChangeText={setSearchTerm}
-          returnKeyType="search"
-        />
+        initialNumToRender={10}
+        maxToRenderPerBatch={8}
+        windowSize={8}
+        removeClippedSubviews={true}
+        updateCellsBatchingPeriod={40}
+        getItemLayout={getItemLayout}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+      />
 
-        <View style={styles.categoriesWrapper}>
-          <ScrollView
-            ref={categoriesRef}
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={[styles.filterContainer, { flexDirection: 'row' }]}
-            nestedScrollEnabled={true}
-          >
-            {categories.map((item, index) => (
-              <React.Fragment key={String(item.id)}>
-                {renderCategoryItem({ item, index })}
-              </React.Fragment>
-            ))}
-          </ScrollView>
-        </View>
-
-        {!isAllSelected && subsOf(selectedCategory).length > 0 && (
-          <View style={styles.categoriesWrapper}>
-            <View style={styles.subcategoryContainer}>
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={[styles.subcategoryContent, { flexDirection: 'row' }]}
-                nestedScrollEnabled={true}
-              >
-                {selectedSub && (
-                  <TouchableOpacity
-                    onPress={onClearSubcategory}
-                    style={[styles.subcategoryButton, { backgroundColor: '#ff6b6b' }]}
-                    activeOpacity={0.7}
-                  >
-                    <FontAwesome name="times" size={12} color="#fff" />
-                    <Text style={[styles.subcategoryText, { color: '#fff', marginLeft: 4 }]}>
-                      Clear
-                    </Text>
-                  </TouchableOpacity>
-                )}
-                {subsOf(selectedCategory).map((item) => (
-                  <TouchableOpacity
-                    key={String(item.id ?? item._id ?? item.subcategoryId)}
-                    onPress={() => onSelectSubcategory(item)}
-                    style={[
-                      styles.subcategoryButton,
-                      String(selectedSub?.id) === String(item.id) &&
-                        styles.subcategoryButtonActive,
-                    ]}
-                    activeOpacity={0.7}
-                  >
-                    <Text
-                      style={[
-                        styles.subcategoryText,
-                        String(selectedSub?.id) === String(item.id) &&
-                          styles.subcategoryTextActive,
-                      ]}
-                    >
-                      {item.subcategoryName ?? item.name ?? 'Unknown'}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-            </View>
-          </View>
-        )}
-
-        {(!isAllSelected || selectedSub) && (
-          <View style={styles.activeFiltersContainer}>
-            <Text style={styles.activeFiltersText}>
-              Filters: {selectedCategory?.name ?? (selectedCategory === 'All' ? 'All' : '')}
-              {selectedSub ? ` > ${selectedSub.subcategoryName ?? selectedSub.name}` : ''} (
-              {filteredProducts.length} products)
-            </Text>
-          </View>
-        )}
-
-        <View style={styles.products}>
-          {filteredProducts.length === 0 && !loading ? (
-            <View style={styles.centered}>
-              <FontAwesome name="inbox" size={48} color="#ccc" />
-              <Text style={styles.emptyText}>No products found</Text>
-              {(!isAllSelected || selectedSub) && (
-                <TouchableOpacity
-                  style={styles.clearFiltersButton}
-                  onPress={() => {
-                    setSelectedCategory('All')
-                    setSelectedSub(null)
-                    setSearchTerm('')
-                  }}
-                >
-                  <Text style={styles.clearFiltersText}>Clear Filters</Text>
-                </TouchableOpacity>
-              )}
-            </View>
-          ) : (
-            <FlatList
-              data={filteredProducts}
-              numColumns={numColumns}
-              keyExtractor={keyExtractor}
-              renderItem={renderProductCard}
-              onEndReached={handleLoadMore}
-              onEndReachedThreshold={0.5}
-              ListFooterComponent={ListFooterComponent}
-              key={`cols-${numColumns}`}
-              contentContainerStyle={{ paddingBottom: 20 }}
-              initialNumToRender={10}
-              maxToRenderPerBatch={10}
-              windowSize={10}
-              removeClippedSubviews={true}
-              updateCellsBatchingPeriod={50}
-              getItemLayout={getItemLayout}
-              nestedScrollEnabled={true}
-              scrollEnabled={false}
-            />
-          )}
-        </View>
-      </ScrollView>
-
+      {/* Product detail modal */}
       <Modal
         visible={modalVisible}
-        animationType="slide"
+        animationType="fade"
         onRequestClose={onCloseModal}
-        transparent={false}
+        transparent
       >
-        <ScrollView
-          contentContainerStyle={styles.modalScrollContainer}
-          keyboardShouldPersistTaps="handled"
-        >
-          {selectedProduct && (
-            <View style={styles.modalInner}>
-              <View style={styles.closeButtonContainer}>
-                <TouchableOpacity
-                  onPress={onCloseModal}
-                  style={styles.closeButton}
-                  accessibilityRole="button"
-                  accessibilityLabel="Close product modal"
-                >
-                  <FontAwesome name="close" size={20} color="#333" />
-                </TouchableOpacity>
-              </View>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContainer}>
+            <ScrollView
+              contentContainerStyle={styles.modalScrollContent}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+            >
+              {selectedProduct && (
+                <View style={styles.modalInner}>
+                  <View style={styles.modalHeader}>
+                    <Text style={styles.modalTitle} numberOfLines={2}>
+                      {selectedProduct.name || selectedProduct.productName || 'Product'}
+                    </Text>
+                    <Pressable
+                      onPress={onCloseModal}
+                      style={({ pressed }) => [styles.closeButton, pressed && { opacity: 0.6 }]}
+                      android_ripple={{ color: '#ccc', borderless: true, radius: 16 }}
+                      accessibilityRole="button"
+                      accessibilityLabel="Close product modal"
+                      hitSlop={12}
+                    >
+                      <FontAwesome name="close" size={18} color="#333" />
+                    </Pressable>
+                  </View>
 
-              <Text style={styles.modalTitle}>
-                {selectedProduct.name || selectedProduct.productName || 'Product'}
-              </Text>
+                  <View style={styles.modalImageWrapper}>
+                    <ProductImage
+                      product={selectedProduct}
+                      style={styles.modalFullImage}
+                      resizeMode="contain"
+                    />
+                  </View>
 
-              <View style={styles.modalImageContainer}>
-                <ProductImage
-                  product={selectedProduct}
-                  style={{ width: '100%', height: '100%' }}
-                  resizeMode="contain"
-                />
-              </View>
+                  <View style={styles.modalInfo}>
+                    <Text style={styles.modalPrice}>
+                      KSH{' '}
+                      {selectedProduct.price != null
+                        ? Number(selectedProduct.price).toLocaleString()
+                        : '0'}
+                    </Text>
 
-              <View style={{ alignItems: 'center', marginBottom: 16 }}>
-                <Text style={styles.modalPrice}>
-                  KSH{' '}
-                  {selectedProduct.price != null
-                    ? Number(selectedProduct.price).toLocaleString()
-                    : '0'}
-                </Text>
-              </View>
+                    <Text style={styles.quantityLabel}>Select Quantity</Text>
 
-              <View style={styles.quantityRow}>
-                <TouchableOpacity
-                  onPress={() =>
-                    setSelectedProduct((p) => ({
-                      ...p,
-                      quantity: Math.max(1, (p.quantity || 1) - 1),
-                    }))
-                  }
-                  style={styles.qtyButton}
-                >
-                  <Text style={styles.qtyText}>−</Text>
-                </TouchableOpacity>
+                    <View style={styles.quantityRow}>
+                      <Pressable
+                        onPress={() =>
+                          setSelectedProduct((p) => ({
+                            ...p,
+                            quantity: Math.max(1, (p.quantity || 1) - 1),
+                          }))
+                        }
+                        style={({ pressed }) => [styles.qtyButton, pressed && { opacity: 0.65 }]}
+                        android_ripple={{ color: 'rgba(90,36,40,0.2)', borderless: true, radius: 22 }}
+                        hitSlop={8}
+                      >
+                        <FontAwesome name="minus" size={12} color="#5a2428" />
+                      </Pressable>
 
-                <Text style={styles.qtyValue}>{selectedProduct.quantity}</Text>
+                      <Text style={styles.qtyValue}>{selectedProduct.quantity}</Text>
 
-                <TouchableOpacity
-                  onPress={() =>
-                    setSelectedProduct((p) => ({ ...p, quantity: (p.quantity || 1) + 1 }))
-                  }
-                  style={styles.qtyButton}
-                >
-                  <Text style={styles.qtyText}>+</Text>
-                </TouchableOpacity>
-              </View>
+                      <Pressable
+                        onPress={() =>
+                          setSelectedProduct((p) => ({ ...p, quantity: (p.quantity || 1) + 1 }))
+                        }
+                        style={({ pressed }) => [styles.qtyButton, pressed && { opacity: 0.65 }]}
+                        android_ripple={{ color: 'rgba(90,36,40,0.2)', borderless: true, radius: 22 }}
+                        hitSlop={8}
+                      >
+                        <FontAwesome name="plus" size={12} color="#5a2428" />
+                      </Pressable>
+                    </View>
+                  </View>
 
-              <TouchableOpacity style={styles.addButton} onPress={onAddToCart}>
-                <FontAwesome
-                  name="shopping-cart"
-                  size={18}
-                  color="#fff"
-                  style={{ marginRight: 8 }}
-                />
-                <Text style={styles.addButtonText}>Add to Cart</Text>
-              </TouchableOpacity>
-            </View>
-          )}
-        </ScrollView>
+                  <Pressable
+                    style={({ pressed }) => [styles.addButton, pressed && { opacity: 0.85 }]}
+                    onPress={onAddToCart}
+                    android_ripple={{ color: 'rgba(255,255,255,0.2)' }}
+                  >
+                    <FontAwesome name="shopping-cart" size={18} color="#fff" style={{ marginRight: 10 }} />
+                    <Text style={styles.addButtonText}>Add to Cart</Text>
+                  </Pressable>
+                </View>
+              )}
+            </ScrollView>
+          </View>
+        </View>
       </Modal>
 
       <BottomNav cartCount={cartCount} />
@@ -803,90 +783,120 @@ const Home = () => {
   )
 }
 
+// ─── Styles ───────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#FFF8E1' },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingTop: 10,
-    paddingBottom: 10,
+    paddingVertical: 15,
     backgroundColor: '#FFF8E1',
+    zIndex: 10,
   },
-  title: { fontSize: 25, fontWeight: 'bold' },
-  searchInput: {
-    borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 8,
-    padding: 10,
-    marginBottom: 10,
+  title: { fontSize: 28, fontWeight: '900', color: '#5a2428', letterSpacing: -0.5 },
+  cartButton: { width: 40, height: 40, justifyContent: 'center', alignItems: 'center' },
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: '#fff',
-  },
-  categoriesWrapper: { height: 50, marginBottom: 10 },
-  filterContainer: { alignItems: 'center', paddingHorizontal: 5 },
-  filterButton: {
-    borderRadius: 8,
+    borderRadius: 12,
     paddingHorizontal: 12,
-    paddingVertical: 6,
-    marginHorizontal: 5,
-    backgroundColor: '#fff',
+    marginBottom: 14,
+    marginTop: 4,
+    borderWidth: 1,
+    borderColor: '#eee',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 5,
     elevation: 2,
-    minWidth: 70,
+  },
+  searchIcon: { marginRight: 10 },
+  searchInput: { flex: 1, paddingVertical: 12, fontSize: 15, color: '#333' },
+  categoriesWrapper: { marginBottom: 12 },
+  filterContainer: { alignItems: 'center', paddingHorizontal: 2 },
+  filterButton: {
+    borderRadius: 24,
+    paddingHorizontal: 18,
+    paddingVertical: 9,
+    marginHorizontal: 4,
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#eee',
     alignItems: 'center',
     flexDirection: 'row',
-  },
-  filterButtonActive: { backgroundColor: '#5a2428' },
-  filterText: { fontSize: 12, fontWeight: 'bold', color: '#333' },
-  filterTextActive: { color: '#fff' },
-  subcategoryContainer: {
-    backgroundColor: '#f8f8f8',
-    borderRadius: 8,
-    marginHorizontal: 5,
-    paddingVertical: 8,
-    elevation: 1,
+    overflow: 'hidden',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
+    shadowOpacity: 0.05,
     shadowRadius: 2,
+    elevation: 1,
   },
-  subcategoryContent: { alignItems: 'center', paddingHorizontal: 10, gap: 8 },
+  filterButtonActive: { backgroundColor: '#5a2428', borderColor: '#5a2428' },
+  filterText: { fontSize: 13, fontWeight: '700', color: '#666' },
+  filterTextActive: { color: '#fff' },
+  subcategoriesWrapper: { marginBottom: 12 },
+  subcategoryContent: {
+    alignItems: 'center',
+    paddingHorizontal: 6,
+    gap: 8,
+    paddingVertical: 6,
+  },
   subcategoryButton: {
     borderRadius: 20,
-    paddingHorizontal: 16,
+    paddingHorizontal: 15,
     paddingVertical: 8,
     backgroundColor: '#fff',
     borderWidth: 1,
     borderColor: '#ddd',
-    marginHorizontal: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 1,
-    elevation: 2,
+    marginHorizontal: 3,
     flexDirection: 'row',
     alignItems: 'center',
+    overflow: 'hidden',
   },
   subcategoryButtonActive: { backgroundColor: '#5a2428', borderColor: '#5a2428' },
-  subcategoryText: { fontSize: 11, fontWeight: '600', color: '#333', textAlign: 'center' },
+  subcategoryText: { fontSize: 13, fontWeight: '600', color: '#555' },
   subcategoryTextActive: { color: '#fff' },
   activeFiltersContainer: {
-    backgroundColor: '#e3f2fd',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-    marginBottom: 10,
-    borderLeftWidth: 3,
-    borderLeftColor: '#1976d2',
+    backgroundColor: '#fff',
+    paddingVertical: 10,
+    paddingHorizontal: 15,
+    borderRadius: 10,
+    marginBottom: 12,
+    borderLeftWidth: 4,
+    borderLeftColor: '#5a2428',
+    elevation: 1,
   },
-  activeFiltersText: { fontSize: 12, color: '#1565c0', fontWeight: '600' },
-  products: { minHeight: 400 },
+  activeFiltersText: { fontSize: 12, color: '#5a2428', fontWeight: '700' },
   card: {
-    borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 8,
+    borderRadius: 16,
     overflow: 'hidden',
     backgroundColor: '#fff',
-    padding: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 5,
+    marginBottom: 8,
+  },
+  imageContainer: {
+    width: '100%',
+    backgroundColor: '#fdfdfd',
+    justifyContent: 'center',
+    alignItems: 'center',
+    overflow: 'hidden',
+  },
+  cardImage: { width: '100%', height: '100%' },
+  quickAddBadge: {
+    position: 'absolute',
+    bottom: 10,
+    right: 10,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#5a2428',
+    justifyContent: 'center',
     alignItems: 'center',
     elevation: 3,
   },
@@ -899,149 +909,152 @@ const styles = StyleSheet.create({
     paddingHorizontal: 30,
     transform: [{ rotate: '45deg' }],
     zIndex: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-    elevation: 5,
   },
-  outOfStockText: {
-    color: '#fff',
-    fontSize: 10,
-    fontWeight: '900',
-    letterSpacing: 1,
-    textAlign: 'center',
-  },
+  outOfStockText: { color: '#fff', fontSize: 9, fontWeight: '900', letterSpacing: 1 },
+  cardContent: { padding: 12 },
   productName: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    marginBottom: 6,
-    textAlign: 'center',
-    paddingHorizontal: 5,
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#333',
+    marginBottom: 8,
+    height: 38,
+    lineHeight: 18,
   },
-  priceWrapper: { marginBottom: 8 },
-  productPrice: {
-    fontSize: 15,
-    fontWeight: '800',
-    color: '#1976d2',
-    textAlign: 'center',
-    backgroundColor: '#e8f0ff',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 14,
-    overflow: 'hidden',
-  },
+  priceContainer: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  productPrice: { fontSize: 15, fontWeight: '800', color: '#5a2428' },
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center', minHeight: 200 },
-  errorText: {
-    fontSize: 16,
-    color: '#d32f2f',
-    textAlign: 'center',
-    marginBottom: 20,
-  },
+  errorText: { fontSize: 16, color: '#d32f2f', textAlign: 'center', marginBottom: 20 },
   retryButton: {
     backgroundColor: '#5a2428',
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 5,
+    paddingHorizontal: 25,
+    paddingVertical: 12,
+    borderRadius: 10,
+    overflow: 'hidden',
   },
   retryText: { color: '#fff', fontWeight: 'bold' },
-  emptyText: { fontSize: 16, color: '#888', marginTop: 12 },
+  emptyText: { fontSize: 16, color: '#888', marginTop: 12, fontWeight: '600' },
   clearFiltersButton: {
     marginTop: 16,
-    backgroundColor: '#5a2428',
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#5a2428',
     paddingHorizontal: 20,
     paddingVertical: 10,
     borderRadius: 8,
+    overflow: 'hidden',
   },
-  clearFiltersText: { color: '#fff', fontWeight: 'bold', fontSize: 14 },
-  footerLoader: { paddingVertical: 20, alignItems: 'center', justifyContent: 'center' },
-  footerText: { marginTop: 10, fontSize: 14, color: '#5a2428', fontWeight: '600' },
-  footerEnd: { paddingVertical: 16, alignItems: 'center' },
-  footerEndText: { fontSize: 13, color: '#666', fontStyle: 'italic' },
-  modalScrollContainer: {
-    flexGrow: 1,
-    backgroundColor: '#FFF8E1',
-    paddingTop: Platform.OS === 'android' ? 20 : 40,
-    paddingBottom: 30,
-  },
-  modalInner: { alignItems: 'center', padding: 20 },
-  closeButtonContainer: {
-    position: 'absolute',
-    top: Platform.OS === 'android' ? 10 : 40,
-    right: 20,
-    zIndex: 10,
-    borderRadius: 25,
-    width: 50,
-    height: 50,
+  clearFiltersText: { color: '#5a2428', fontWeight: 'bold', fontSize: 14 },
+  footerLoader: { paddingVertical: 30, alignItems: 'center' },
+  footerText: { marginTop: 10, fontSize: 13, color: '#5a2428', fontWeight: '600' },
+  footerEnd: { paddingVertical: 20, alignItems: 'center' },
+  footerEndText: { fontSize: 12, color: '#999', fontStyle: 'italic' },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
     justifyContent: 'center',
     alignItems: 'center',
+    padding: 20,
   },
+  modalContainer: {
+    width: '100%',
+    maxHeight: '85%',
+    backgroundColor: '#fff',
+    borderRadius: 24,
+    overflow: 'hidden',
+    elevation: 10,
+  },
+  modalScrollContent: { flexGrow: 1 },
+  modalInner: { padding: 24 },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 20,
+  },
+  modalTitle: { flex: 1, fontSize: 22, fontWeight: '800', color: '#333', marginRight: 15 },
   closeButton: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#f5f5f5',
+    justifyContent: 'center',
+    alignItems: 'center',
+    overflow: 'hidden',
+  },
+  modalImageWrapper: {
+    width: '100%',
+    height: 250,
+    backgroundColor: '#fdfdfd',
+    borderRadius: 16,
+    marginBottom: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#f0f0f0',
+  },
+  modalFullImage: { width: '90%', height: '90%' },
+  modalInfo: { alignItems: 'center', marginBottom: 24 },
+  modalPrice: { fontSize: 26, fontWeight: '900', color: '#5a2428', marginBottom: 20 },
+  quantityLabel: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#666',
+    marginBottom: 12,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+  },
+  quantityRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f5f5f5',
+    borderRadius: 30,
+    padding: 5,
+  },
+  qtyButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: '#fff',
     justifyContent: 'center',
     alignItems: 'center',
-    elevation: 3,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-  },
-  modalTitle: { fontSize: 24, fontWeight: 'bold', marginBottom: 20, textAlign: 'center' },
-  modalImageContainer: {
-    marginBottom: 20,
-    width: Platform.OS === 'web' ? 320 : 180,
-    height: 260,
-  },
-  modalPrice: {
-    fontSize: 20,
-    fontWeight: '900',
-    color: '#1976d2',
-    backgroundColor: '#eaf3ff',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 16,
-  },
-  quantityRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 20 },
-  qtyButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 5,
-    backgroundColor: '#ddd',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginHorizontal: 10,
+    overflow: 'hidden',
     elevation: 2,
   },
-  qtyText: { fontSize: 18, fontWeight: 'bold' },
-  qtyValue: { fontSize: 16, fontWeight: 'bold', width: 30, textAlign: 'center' },
+  qtyValue: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#333',
+    marginHorizontal: 25,
+    minWidth: 20,
+    textAlign: 'center',
+  },
   addButton: {
-    width: '80%',
-    padding: 15,
+    width: '100%',
     backgroundColor: '#5a2428',
-    borderRadius: 5,
-    alignItems: 'center',
+    borderRadius: 16,
+    paddingVertical: 16,
     flexDirection: 'row',
     justifyContent: 'center',
-    elevation: 3,
+    alignItems: 'center',
+    overflow: 'hidden',
+    elevation: 5,
   },
-  addButtonText: { fontSize: 16, fontWeight: 'bold', color: '#fff' },
+  addButtonText: { fontSize: 16, fontWeight: '800', color: '#fff', letterSpacing: 0.5 },
   cartBadge: {
     position: 'absolute',
-    right: -6,
-    top: -6,
-    minWidth: 18,
-    height: 18,
-    borderRadius: 9,
-    backgroundColor: '#d32f2f',
+    right: -2,
+    top: -2,
+    minWidth: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: '#5a2428',
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 4,
-    elevation: 4,
+    borderWidth: 2,
+    borderColor: '#FFF8E1',
   },
-  cartBadgeText: { color: '#fff', fontSize: 11, fontWeight: '700' },
+  cartBadgeText: { color: '#fff', fontSize: 10, fontWeight: '900' },
   overlayContainer: {
     flex: 1,
     backgroundColor: '#FFF8E1',
@@ -1050,25 +1063,14 @@ const styles = StyleSheet.create({
   },
   overlayContent: {
     alignItems: 'center',
-    justifyContent: 'center',
     padding: 40,
     backgroundColor: '#fff',
-    borderRadius: 16,
-    elevation: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
+    borderRadius: 24,
+    elevation: 10,
     minWidth: 280,
   },
-  overlayText: {
-    marginTop: 20,
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#5a2428',
-    textAlign: 'center',
-  },
-  overlaySubtext: { marginTop: 8, fontSize: 14, color: '#666', textAlign: 'center' },
+  overlayText: { marginTop: 20, fontSize: 20, fontWeight: '800', color: '#5a2428', textAlign: 'center' },
+  overlaySubtext: { marginTop: 8, fontSize: 14, color: '#999', textAlign: 'center' },
 })
 
 export default Home
