@@ -13,11 +13,10 @@ import {
 } from 'react-native'
 import Icon from 'react-native-vector-icons/FontAwesome'
 import { useRouter } from 'expo-router'
-import axios from 'axios'
-import { baseUrl } from '../constants/const'
-import { useToast } from 'react-native-toast-notifications'
+
 import { useSelector, useDispatch } from 'react-redux'
 import { useGetPagedProductsQuery } from '../redux/api/productsApi'
+import { useGetOrdersQuery } from '../redux/api/ordersApi'
 import { setProducts } from '../redux/slices/productsSlice'
 
 import BottomNav from '../components/BottomNav'
@@ -296,15 +295,13 @@ const Package = () => {
   const router = useRouter()
   const insets = useSafeAreaInsets()
   const dispatch = useDispatch()
-  const toast = useToast()
 
 
-  const [orders, setOrders] = useState([])
-  const [loading, setLoading] = useState(true)
   const [selectedOrder, setSelectedOrder] = useState(null)
   const [modalVisible, setModalVisible] = useState(false)
 
   const user = useSelector((s) => s.auth?.user || {})
+  const isAuthenticated = useSelector((s) => s.auth?.isAuthenticated)
   const productsById = useSelector((s) => s.products?.productsById || {})
   const productsArray = useSelector((s) => s.products?.products || [])
   const cartState = useSelector((s) => s.cart || {})
@@ -315,7 +312,11 @@ const Package = () => {
     ? Object.values(cartItemsCandidate).reduce((sum, it) => sum + (Number(it?.quantity) || 0), 0)
     : 0
 
-  const currentUserPhone = (user?.phone || user?.phoneNumber || user?.id || '').toString()
+  const username = String(user?.phone ?? user?.phoneNumber ?? user?.id ?? '').trim()
+  const { data: rawOrders = [], isLoading: loading, error: ordersError } = useGetOrdersQuery(username, {
+    skip: !isAuthenticated || !username,
+  })
+  const orders = rawOrders
 
   const lookupProductFromRedux = useMemo(() => {
     return (productId) => {
@@ -338,7 +339,7 @@ const Package = () => {
   // Proactive product fetch if cache is empty
   const isProductsCacheEmpty = productsArray.length === 0
   const { data: pageData, isLoading: loadingProducts } = useGetPagedProductsQuery({ pageNumber: 1, pageSize: 500 }, {
-    skip: !user || !isProductsCacheEmpty
+    skip: !isAuthenticated || !isProductsCacheEmpty
   })
 
   useEffect(() => {
@@ -346,43 +347,6 @@ const Package = () => {
       dispatch(setProducts(pageData.items))
     }
   }, [pageData, dispatch, isProductsCacheEmpty])
-
-  useEffect(() => {
-
-    const fetchOrders = async () => {
-      try {
-        setLoading(true)
-        const response = await axios.get(`${baseUrl}/orders`)
-        const data = response?.data
-        if (!Array.isArray(data)) {
-          setOrders([])
-          setLoading(false)
-          return
-        }
-
-        const userOrders = data.filter((order) => {
-          const orderUserId = (order.userId || order.user || '').toString()
-          return orderUserId && currentUserPhone && (orderUserId === currentUserPhone || orderUserId === String(user?.id))
-        })
-
-        setOrders(userOrders)
-      } catch (error) {
-        console.error('Error fetching orders:', error)
-        toast?.show?.('Failed to load orders. Please try again later.', { type: 'danger' })
-        setOrders([])
-      } finally {
-        setLoading(false)
-      }
-    }
-
-    if (!currentUserPhone) {
-      setOrders([])
-      setLoading(false)
-      return
-    }
-
-    fetchOrders()
-  }, [currentUserPhone, user])
 
   const handleTrackOrder = (order) => {
     setSelectedOrder(order)

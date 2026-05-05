@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { View, Text, Modal, StyleSheet, TouchableOpacity, Linking, Platform } from 'react-native';
 import Constants from 'expo-constants';
 import axios from 'axios';
+import { useSelector } from 'react-redux';
 
 const isVersionOlder = (current, required) => {
   if (!current || !required) return false;
@@ -19,11 +20,13 @@ const isVersionOlder = (current, required) => {
 export default function AppUpdateModal() {
   const [showModal, setShowModal] = useState(false);
   const [latestVersion, setLatestVersion] = useState(null);
+  const isAuthenticated = useSelector((state) => state.auth?.isAuthenticated);
 
   useEffect(() => {
     let mounted = true;
 
     const checkVersion = async () => {
+      if (!isAuthenticated) return;
       try {
         const response = await axios.get('https://api.arpellastore.com/settings');
         if (!mounted) return;
@@ -47,7 +50,7 @@ export default function AppUpdateModal() {
     
     checkVersion();
     return () => { mounted = false; };
-  }, []);
+  }, [isAuthenticated]);
 
   const handleUpdate = () => {
     const pkg = 'com.mgachanja.Arpella';
